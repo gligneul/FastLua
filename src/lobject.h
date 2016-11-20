@@ -426,6 +426,7 @@ typedef struct Proto {
   struct LClosure *cache;  /* last-created closure with this prototype */
   TString  *source;  /* used for debug information */
   GCObject *gclist;
+  short *icount; /* profiling data; see fl_prof.h */
 } Proto;
 
 

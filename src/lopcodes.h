@@ -218,6 +218,7 @@ OP_RETURN,/*	A B	return R(A), ... ,R(A+B-2)	(see note)	*/
 OP_FORLOOP,/*	A sBx	R(A)+=R(A+2);
 			if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }*/
 OP_FORPREP,/*	A sBx	R(A)-=R(A+2); pc+=sBx				*/
+OP_FORLOOP_PROF,/* FORLOOP with profilling */
 
 OP_TFORCALL,/*	A C	R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2));	*/
 OP_TFORLOOP,/*	A sBx	if R(A+1) ~= nil then { R(A)=R(A+1); pc += sBx }*/
@@ -229,6 +230,7 @@ OP_CLOSURE,/*	A Bx	R(A) := closure(KPROTO[Bx])			*/
 OP_VARARG,/*	A B	R(A), R(A+1), ..., R(A+B-2) = vararg		*/
 
 OP_EXTRAARG/*	Ax	extra (larger) argument for previous opcode	*/
+
 } OpCode;
 
 

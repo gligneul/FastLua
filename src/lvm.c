@@ -30,6 +30,8 @@
 #include "ltm.h"
 #include "lvm.h"
 
+#include "fl_prof.h"
+
 
 /* limit for table tag-method chains (to avoid loops) */
 #define MAXTAGLOOP	2000
@@ -1187,7 +1189,12 @@ void luaV_execute (lua_State *L) {
           goto newframe;  /* restart luaV_execute over new Lua function */
         }
       }
+      vmcase(OP_FORLOOP_PROF) {
+        flP_profile(ci);
+        goto l_forloop;
+      }
       vmcase(OP_FORLOOP) {
+        l_forloop:
         if (ttisinteger(ra)) {  /* integer loop? */
           lua_Integer step = ivalue(ra + 2);
           lua_Integer idx = intop(+, ivalue(ra), step); /* increment index */

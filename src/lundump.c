@@ -23,6 +23,8 @@
 #include "lundump.h"
 #include "lzio.h"
 
+#include "fl_prof.h"
+
 
 #if !defined(luai_verifycode)
 #define luai_verifycode(L,b,f)  /* empty */
@@ -213,6 +215,7 @@ static void LoadFunction (LoadState *S, Proto *f, TString *psource) {
   LoadUpvalues(S, f);
   LoadProtos(S, f);
   LoadDebug(S, f);
+  flP_initproto(S->L, f);
 }
 
 

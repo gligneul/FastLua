@@ -27,6 +27,8 @@
 #include "lstring.h"
 #include "ltable.h"
 
+#include "fl_prof.h"
+
 
 
 /* maximum number of local variables per function (must be smaller
@@ -567,6 +569,7 @@ static void close_func (LexState *ls) {
   f->sizeupvalues = fs->nups;
   lua_assert(fs->bl == NULL);
   ls->fs = fs->prev;
+  flP_initproto(L, f);
   luaC_checkGC(L);
 }
 
