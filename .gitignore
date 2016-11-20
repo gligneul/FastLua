@@ -1,0 +1,15 @@
+# Object files
+*.o
+
+# Libraries
+*.a
+
+# Executables
+src/lua
+src/luac
+
+# benchmark outputs
+benchmark_out*
+
+# Vim temporaries
+*.swp
