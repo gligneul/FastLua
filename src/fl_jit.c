@@ -22,26 +22,42 @@
  * SOFTWARE.
  */
 
-/*
- * This module is responsable for the profiling step of the jit compiler.
- */
+#include <stdio.h>
 
-#ifndef fl_prof_h
-#define fl_prof_h
+#include "lprefix.h"
 
-struct Proto;
-struct CallInfo;
-struct lua_State;
+#include "lopcodes.h"
+#include "lstate.h"
 
-/*
- * Initializes the function profiling data
- */
-void flP_initproto(struct lua_State *L, struct Proto *p);
+#include "fl_jit.h"
 
-/*
- * Profiling step
- */
-void flP_profile(struct lua_State *L, struct CallInfo *ci);
+TraceRec *flJ_createtracerec(struct lua_State *L) {
+  TraceRec *tr = luaM_new(L, TraceRec);
+  tr->code = NULL;
+  tr->codesize = 0;
+  tr->rt = NULL;
+  tr->rtsize = 0;
+  tr->n = 0;
+  return tr;
+}
 
+void flJ_destroytracerec(struct lua_State *L, TraceRec *tr) {
+  luaM_freearray(L, tr->rt, tr->rtsize);
+  luaM_freearray(L, tr->code, tr->codesize);
+  luaM_free(L, tr);
+}
+
+void flJ_compile(struct lua_State *L, TraceRec *tr) {
+  (void)L;
+  (void)tr;
+#if 0
+  int i = 0;
+  printf(">>> ");
+  for (i = 0; i < tr->n; ++i) {
+    int op = GET_OPCODE(tr->code[i]);
+    printf("%s, ", luaP_opnames[op]);
+  }
+  printf("\n");
 #endif
+}
 

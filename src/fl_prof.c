@@ -28,11 +28,13 @@
 
 #include "lprefix.h"
 
-#include "fl_prof.h"
 #include "llimits.h"
 #include "lobject.h"
 #include "lopcodes.h"
 #include "lstate.h"
+
+#include "fl_prof.h"
+#include "fl_rec.h"
 
 #ifndef FL_JIT_THRESHOLD
 #define FL_JIT_THRESHOLD 50
@@ -74,12 +76,12 @@ void flP_initproto(struct lua_State *L, struct Proto *p) {
   init_opcodes(p->code, p->sizecode);
 }
 
-void flP_profile(struct CallInfo *ci) {
+void flP_profile(struct lua_State *L, struct CallInfo *ci) {
   Proto *p = getproto(ci->func);
   l_mem i = ci->u.l.savedpc - 1 - p->code;
   assert(p->icount[i] <= FL_JIT_THRESHOLD);
-  if (++p->icount[i] > FL_JIT_THRESHOLD) {
-/*    printf("compile %p --- %lu\n", p, i);*/
+  if (!flR_recflag(L) && ++p->icount[i] > FL_JIT_THRESHOLD) {
+    flR_start(L);
     reset_instruction(&p->code[i]);
   }
 }

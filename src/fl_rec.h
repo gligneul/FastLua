@@ -23,25 +23,33 @@
  */
 
 /*
- * This module is responsable for the profiling step of the jit compiler.
+ * This module is responsable for recording the opcodes and creating
+ * the trace.
  */
 
-#ifndef fl_prof_h
-#define fl_prof_h
+#ifndef fl_rec_h
+#define fl_rec_h
 
-struct Proto;
-struct CallInfo;
+#include "llimits.h"
+
 struct lua_State;
 
 /*
- * Initializes the function profiling data
+ * Obtains the recording enabled/disabled flag
  */
-void flP_initproto(struct lua_State *L, struct Proto *p);
+#define flR_recflag(L) (L->recflag)
 
 /*
- * Profiling step
+ * Starts/stops the recording
  */
-void flP_profile(struct lua_State *L, struct CallInfo *ci);
+void flR_start(struct lua_State *L);
+void flR_stop(struct lua_State *L);
+
+/*
+ * Records the current trace
+ */
+#define flR_record(L, i) { if (flR_recflag(L)) flR_record_(L, i); }
+void flR_record_(struct lua_State *L, Instruction i);
 
 #endif
 

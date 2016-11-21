@@ -31,6 +31,7 @@
 #include "lvm.h"
 
 #include "fl_prof.h"
+#include "fl_rec.h"
 
 
 /* limit for table tag-method chains (to avoid loops) */
@@ -801,6 +802,7 @@ void luaV_execute (lua_State *L) {
     Instruction i;
     StkId ra;
     vmfetch();
+    flR_record(L, i);
     vmdispatch (GET_OPCODE(i)) {
       vmcase(OP_MOVE) {
         setobjs2s(L, ra, RB(i));
@@ -1190,7 +1192,7 @@ void luaV_execute (lua_State *L) {
         }
       }
       vmcase(OP_FORLOOP_PROF) {
-        flP_profile(ci);
+        flP_profile(L, ci);
         goto l_forloop;
       }
       vmcase(OP_FORLOOP) {

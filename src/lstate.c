@@ -27,6 +27,8 @@
 #include "ltable.h"
 #include "ltm.h"
 
+#include "fl_rec.h"
+
 
 #if !defined(LUAI_GCPAUSE)
 #define LUAI_GCPAUSE	200  /* 200% */
@@ -236,6 +238,8 @@ static void preinit_thread (lua_State *L, global_State *g) {
   L->nny = 1;
   L->status = LUA_OK;
   L->errfunc = 0;
+  L->recflag = 0;
+  L->tracerec = NULL;
 }
 
 

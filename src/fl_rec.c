@@ -22,26 +22,48 @@
  * SOFTWARE.
  */
 
-/*
- * This module is responsable for the profiling step of the jit compiler.
- */
+#include <assert.h>
 
-#ifndef fl_prof_h
-#define fl_prof_h
+#include "lprefix.h"
+#include "lstate.h"
 
-struct Proto;
-struct CallInfo;
-struct lua_State;
+#include "fl_rec.h"
+#include "fl_jit.h"
 
-/*
- * Initializes the function profiling data
- */
-void flP_initproto(struct lua_State *L, struct Proto *p);
+#define tracerec(L) (L->tracerec)
+#define recflag(L) (flR_recflag(L))
 
-/*
- * Profiling step
- */
-void flP_profile(struct lua_State *L, struct CallInfo *ci);
+void flR_start(lua_State *L) {
+  assert(!recflag(L));
+  assert(!tracerec(L));
+  recflag(L) = 1;
+  tracerec(L) = flJ_createtracerec(L);
+}
 
+void flR_stop(lua_State *L) {
+  assert(recflag(L));
+  assert(tracerec(L));
+  recflag(L) = 0;
+  flJ_compile(L, tracerec(L));
+  flJ_destroytracerec(L, tracerec(L));
+  tracerec(L) = NULL;
+}
+
+void flR_record_(struct lua_State *L, Instruction i) {
+  TraceRec *tr = tracerec(L);
+  if (tr->n > 5) {
+    flR_stop(L);
+    return;
+  }
+  luaM_growvector(L, tr->code, tr->n, tr->codesize, Instruction, MAX_INT, "");
+  tr->code[tr->n++] = i;
+#if 0
+  switch (GET_OPCODE(i)) {
+    default:
+      flR_stop(L);
+      return;
+  }
 #endif
+}
+
 

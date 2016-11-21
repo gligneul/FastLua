@@ -23,25 +23,47 @@
  */
 
 /*
- * This module is responsable for the profiling step of the jit compiler.
+ * This module is responsable for compiling the recorded trace into machine
+ * code.
  */
 
-#ifndef fl_prof_h
-#define fl_prof_h
+#ifndef fl_jit_h
+#define fl_jit_h
 
-struct Proto;
-struct CallInfo;
 struct lua_State;
 
 /*
- * Initializes the function profiling data
+ * Runtime information for each instruction
  */
-void flP_initproto(struct lua_State *L, struct Proto *p);
+typedef struct RuntimeRec {
+  union {
+    struct {
+      lu_byte rb, rc;
+    } types;
+  } u;
+} RuntimeRec;
 
 /*
- * Profiling step
+ * Trace recording
  */
-void flP_profile(struct lua_State *L, struct CallInfo *ci);
+typedef struct TraceRec {
+  Instruction *code;
+  int codesize;
+  RuntimeRec *rt;
+  int rtsize;
+  int n;
+} TraceRec;
+
+/*
+ * Creates/destroys a trace recording
+ */
+TraceRec *flJ_createtracerec(struct lua_State *L);
+void flJ_destroytracerec(struct lua_State *L, TraceRec *tr);
+
+/*
+ * Compiles the trace recording
+ */
+void flJ_compile(struct lua_State *L, TraceRec *tr);
 
 #endif
 
