@@ -36,10 +36,6 @@
 #include "fl_prof.h"
 #include "fl_rec.h"
 
-#ifndef FL_JIT_THRESHOLD
-#define FL_JIT_THRESHOLD 50
-#endif
-
 #define profcat(op) op ## _PROF
 
 #define OPCODE_TO_PROF(i, op) \
@@ -79,13 +75,14 @@ void flP_initproto(struct lua_State *L, struct Proto *p) {
   init_opcodes(p->code, p->sizecode);
 }
 
-void flP_profile(struct lua_State *L, CallInfo *ci, int loopcount) {
+void flP_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
+  assert(loopcount > 0);
   if (!flR_recflag(L)) {
     Proto *p = getproto(ci->func);
     l_mem i = ci->u.l.savedpc - 1 - p->code;
-    assert(p->icount[i] <= FL_JIT_THRESHOLD);
+    assert(p->icount[i] < FL_JIT_THRESHOLD);
     p->icount[i] += loopcount;
-    if (p->icount[i] > FL_JIT_THRESHOLD) {
+    if (p->icount[i] >= FL_JIT_THRESHOLD) {
       flR_start(L);
       reset_instruction(&p->code[i]);
     }

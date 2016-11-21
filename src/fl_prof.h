@@ -34,14 +34,22 @@ struct CallInfo;
 struct lua_State;
 
 /*
- * Initializes the function profiling data
+ * Numbers of calls required to compile a trace.
+ */
+#ifndef FL_JIT_THRESHOLD
+#define FL_JIT_THRESHOLD 50
+#endif
+
+/*
+ * Initializes the function profiling data.
  */
 void flP_initproto(struct lua_State *L, struct Proto *p);
 
 /*
- * General profiling step
+ * General profiling step.
+ * loopcount should be greater than 0.
  */
-void flP_profile(struct lua_State *L, struct CallInfo *ci, int loopcount);
+void flP_profile(struct lua_State *L, struct CallInfo *ci, short loopcount);
 
 #endif
 

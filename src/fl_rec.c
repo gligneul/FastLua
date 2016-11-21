@@ -23,6 +23,7 @@
  */
 
 #include <assert.h>
+#include <stdio.h>
 
 #include "lprefix.h"
 
@@ -94,8 +95,9 @@ void flR_stop(lua_State *L) {
 
 void flR_record_(struct lua_State *L, struct CallInfo* ci) {
   TraceRec *tr = tracerec(L);
-  const Instruction *i = ci->u.l.savedpc - 1;
+  const Instruction *i = ci->u.l.savedpc;
   if (!tr->start) {
+    tr->p = getproto(ci->func);
     tr->start = i;
   }
   else if (tr->start == i) {

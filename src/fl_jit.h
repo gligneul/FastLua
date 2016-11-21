@@ -48,6 +48,7 @@ typedef struct RuntimeRec {
  * Trace recording
  */
 typedef struct TraceRec {
+  Proto *p;
   const Instruction *start;
   int n;
   RuntimeRec *rt;

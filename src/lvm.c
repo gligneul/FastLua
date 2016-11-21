@@ -801,8 +801,8 @@ void luaV_execute (lua_State *L) {
   for (;;) {
     Instruction i;
     StkId ra;
+    flR_record(L, ci);
     vmfetch();
-    flR_record(L, i);
     vmdispatch (GET_OPCODE(i)) {
       vmcase(OP_MOVE) {
         setobjs2s(L, ra, RB(i));
@@ -1221,14 +1221,17 @@ void luaV_execute (lua_State *L) {
         TValue *pstep = ra + 2;
         lua_Integer ilimit;
         int stopnow;
-        int loopcount = 0;
+        lua_Integer loopcount = 0;
         if (ttisinteger(init) && ttisinteger(pstep) &&
             forlimit(plimit, &ilimit, ivalue(pstep), &stopnow)) {
           /* all values are integer */
           lua_Integer initv = (stopnow ? 0 : ivalue(init));
           setivalue(plimit, ilimit);
           setivalue(init, intop(-, initv, ivalue(pstep)));
-          loopcount = (ilimit - ivalue(init)) / ivalue(pstep);
+          if (ivalue(pstep) == 0)
+            loopcount = FL_JIT_THRESHOLD;
+          else
+            loopcount = intop(/, intop(-, ilimit, ivalue(init)), ivalue(pstep));
         }
         else {  /* try making all values floats */
           lua_Number ninit; lua_Number nlimit; lua_Number nstep;
@@ -1241,10 +1244,16 @@ void luaV_execute (lua_State *L) {
           if (!tonumber(init, &ninit))
             luaG_runerror(L, "'for' initial value must be a number");
           setfltvalue(init, luai_numsub(L, ninit, nstep));
-          loopcount = (int)((nlimit - fltvalue(init)) / nstep);
+          if (nstep == 0.0)
+            loopcount = FL_JIT_THRESHOLD;
+          else
+            loopcount = cast_int((nlimit - fltvalue(init)) / nstep);
         }
-        loopcount = (loopcount > 0 ? loopcount : 0);
-        flP_profile(L, ci, loopcount);
+        if (loopcount > 0) {
+          short lc = (loopcount > FL_JIT_THRESHOLD ?
+                      FL_JIT_THRESHOLD : loopcount);
+          flP_profile(L, ci, lc);
+        }
         ci->u.l.savedpc += GETARG_sBx(i);
         vmbreak;
       }
