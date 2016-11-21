@@ -29,6 +29,7 @@
 #include "lopcodes.h"
 #include "lstate.h"
 
+#include "fl_ir.h"
 #include "fl_jit.h"
 
 static l_mem getnextpc(l_mem oldpc, Instruction i) {

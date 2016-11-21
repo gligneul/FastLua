@@ -8,7 +8,7 @@ PLAT= linux
 
 WARNINGS= -Wall -Wextra -Wshadow -pedantic
 
-CC= gcc
+CC= gcc -std=gnu99
 CFLAGS= -O0 -g $(WARNINGS) -Werror -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= -lm $(SYSLIBS) $(MYLIBS)
@@ -24,7 +24,7 @@ SYSLIBS=
 MYCFLAGS=
 MYLDFLAGS=
 MYLIBS=
-MYOBJS=fl_jit.o fl_prof.o fl_rec.o
+MYOBJS=fl_ir.o fl_jit.o fl_prof.o fl_rec.o
 
 # == END OF USER SETTINGS -- NO NEED TO CHANGE ANYTHING BELOW THIS LINE =======
 
