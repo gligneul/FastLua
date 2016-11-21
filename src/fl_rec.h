@@ -33,6 +33,7 @@
 #include "llimits.h"
 
 struct lua_State;
+struct CallInfo;
 
 /*
  * Obtains the recording enabled/disabled flag
@@ -48,8 +49,8 @@ void flR_stop(struct lua_State *L);
 /*
  * Records the current trace
  */
-#define flR_record(L, i) { if (flR_recflag(L)) flR_record_(L, i); }
-void flR_record_(struct lua_State *L, Instruction i);
+#define flR_record(L, ci) { if (flR_recflag(L)) flR_record_(L, ci); }
+void flR_record_(struct lua_State *L, struct CallInfo *ci);
 
 #endif
 

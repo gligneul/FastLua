@@ -1191,12 +1191,7 @@ void luaV_execute (lua_State *L) {
           goto newframe;  /* restart luaV_execute over new Lua function */
         }
       }
-      vmcase(OP_FORLOOP_PROF) {
-        flP_profile(L, ci);
-        goto l_forloop;
-      }
       vmcase(OP_FORLOOP) {
-        l_forloop:
         if (ttisinteger(ra)) {  /* integer loop? */
           lua_Integer step = ivalue(ra + 2);
           lua_Integer idx = intop(+, ivalue(ra), step); /* increment index */
@@ -1218,6 +1213,39 @@ void luaV_execute (lua_State *L) {
             setfltvalue(ra + 3, idx);  /* ...and external index */
           }
         }
+        vmbreak;
+      }
+      vmcase(OP_FORPREP_PROF) {
+        TValue *init = ra;
+        TValue *plimit = ra + 1;
+        TValue *pstep = ra + 2;
+        lua_Integer ilimit;
+        int stopnow;
+        int loopcount = 0;
+        if (ttisinteger(init) && ttisinteger(pstep) &&
+            forlimit(plimit, &ilimit, ivalue(pstep), &stopnow)) {
+          /* all values are integer */
+          lua_Integer initv = (stopnow ? 0 : ivalue(init));
+          setivalue(plimit, ilimit);
+          setivalue(init, intop(-, initv, ivalue(pstep)));
+          loopcount = (ilimit - ivalue(init)) / ivalue(pstep);
+        }
+        else {  /* try making all values floats */
+          lua_Number ninit; lua_Number nlimit; lua_Number nstep;
+          if (!tonumber(plimit, &nlimit))
+            luaG_runerror(L, "'for' limit must be a number");
+          setfltvalue(plimit, nlimit);
+          if (!tonumber(pstep, &nstep))
+            luaG_runerror(L, "'for' step must be a number");
+          setfltvalue(pstep, nstep);
+          if (!tonumber(init, &ninit))
+            luaG_runerror(L, "'for' initial value must be a number");
+          setfltvalue(init, luai_numsub(L, ninit, nstep));
+          loopcount = (int)((nlimit - fltvalue(init)) / nstep);
+        }
+        loopcount = (loopcount > 0 ? loopcount : 0);
+        flP_profile(L, ci, loopcount);
+        ci->u.l.savedpc += GETARG_sBx(i);
         vmbreak;
       }
       vmcase(OP_FORPREP) {

@@ -6,8 +6,10 @@
 # Your platform. See PLATS for possible values.
 PLAT= linux
 
-CC= gcc -std=gnu99
-CFLAGS= -O0 -g -Wall -Wextra -Werror -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
+WARNINGS= -Wall -Wextra -Wshadow -pedantic
+
+CC= gcc
+CFLAGS= -O2 $(WARNINGS) -Werror -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= -lm $(SYSLIBS) $(MYLIBS)
 

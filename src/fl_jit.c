@@ -33,17 +33,15 @@
 
 TraceRec *flJ_createtracerec(struct lua_State *L) {
   TraceRec *tr = luaM_new(L, TraceRec);
-  tr->code = NULL;
-  tr->codesize = 0;
+  tr->start = NULL;
+  tr->n = 0;
   tr->rt = NULL;
   tr->rtsize = 0;
-  tr->n = 0;
   return tr;
 }
 
 void flJ_destroytracerec(struct lua_State *L, TraceRec *tr) {
   luaM_freearray(L, tr->rt, tr->rtsize);
-  luaM_freearray(L, tr->code, tr->codesize);
   luaM_free(L, tr);
 }
 

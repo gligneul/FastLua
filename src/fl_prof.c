@@ -40,6 +40,14 @@
 #define FL_JIT_THRESHOLD 50
 #endif
 
+#define profcat(op) op ## _PROF
+
+#define OPCODE_TO_PROF(i, op) \
+    case op: SET_OPCODE(i, profcat(op)); break
+
+#define PROF_TO_OPCODE(i, op) \
+    case profcat(op): SET_OPCODE(i, op); break
+
 /*
  * Swaps the default opcodes for the profiling ones
  */
@@ -47,11 +55,8 @@ static void init_opcodes(Instruction *code, int n) {
   int i = 0;
   for (i = 0; i < n; ++i) {
     switch (GET_OPCODE(code[i])) {
-      case OP_FORLOOP:
-        SET_OPCODE(code[i], OP_FORLOOP_PROF);
-        break;
-      default:
-        break;
+      OPCODE_TO_PROF(code[i], OP_FORPREP);
+      default: break;
     }
   }
 }
@@ -61,9 +66,7 @@ static void init_opcodes(Instruction *code, int n) {
  */
 static void reset_instruction(Instruction *i) {
   switch (GET_OPCODE(*i)) {
-    case OP_FORLOOP_PROF:
-      SET_OPCODE(*i, OP_FORLOOP);
-      break;
+    PROF_TO_OPCODE(*i, OP_FORPREP);
     default:
       assert(0 && "failed to reset instruction");
       break;
@@ -76,13 +79,16 @@ void flP_initproto(struct lua_State *L, struct Proto *p) {
   init_opcodes(p->code, p->sizecode);
 }
 
-void flP_profile(struct lua_State *L, struct CallInfo *ci) {
-  Proto *p = getproto(ci->func);
-  l_mem i = ci->u.l.savedpc - 1 - p->code;
-  assert(p->icount[i] <= FL_JIT_THRESHOLD);
-  if (!flR_recflag(L) && ++p->icount[i] > FL_JIT_THRESHOLD) {
-    flR_start(L);
-    reset_instruction(&p->code[i]);
+void flP_profile(struct lua_State *L, CallInfo *ci, int loopcount) {
+  if (!flR_recflag(L)) {
+    Proto *p = getproto(ci->func);
+    l_mem i = ci->u.l.savedpc - 1 - p->code;
+    assert(p->icount[i] <= FL_JIT_THRESHOLD);
+    p->icount[i] += loopcount;
+    if (p->icount[i] > FL_JIT_THRESHOLD) {
+      flR_start(L);
+      reset_instruction(&p->code[i]);
+    }
   }
 }
 

@@ -37,9 +37,10 @@ struct lua_State;
  */
 typedef struct RuntimeRec {
   union {
+    lu_byte forlooptype;
     struct {
       lu_byte rb, rc;
-    } types;
+    } binoptypes;
   } u;
 } RuntimeRec;
 
@@ -47,11 +48,10 @@ typedef struct RuntimeRec {
  * Trace recording
  */
 typedef struct TraceRec {
-  Instruction *code;
-  int codesize;
+  const Instruction *start;
+  int n;
   RuntimeRec *rt;
   int rtsize;
-  int n;
 } TraceRec;
 
 /*

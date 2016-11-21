@@ -39,9 +39,9 @@ struct lua_State;
 void flP_initproto(struct lua_State *L, struct Proto *p);
 
 /*
- * Profiling step
+ * General profiling step
  */
-void flP_profile(struct lua_State *L, struct CallInfo *ci);
+void flP_profile(struct lua_State *L, struct CallInfo *ci, int loopcount);
 
 #endif
 
