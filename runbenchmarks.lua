@@ -1,4 +1,4 @@
-#!/bin/lua
+#!/bin/env lua
 
 -- Configuration:
 local n_runs = 3
