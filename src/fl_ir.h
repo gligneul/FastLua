@@ -85,7 +85,7 @@ typedef struct IRValue {
   int type; /* value type */
   int cmd; /* command that generated the value */
   union { /* the command arguments */
-    struct { union IRConstant u; } konst;
+    union IRConstant konst;
     struct { int n; } getarg;
     struct { struct IRValue *mem; } load;
     struct { struct IRValue *mem, *v; } store;
@@ -145,6 +145,11 @@ IRValue* IRgetarg(IRFunction *F, int type, int n);
 IRValue* IRload(IRFunction *F, int type, IRValue *mem);
 IRValue* IRstore(IRFunction *F, int type, IRValue *mem, IRValue *val);
 IRValue* IRbinop(IRFunction *F, int op, IRValue *l, IRValue *r);
+
+/*
+ * DEBUG: Prints the function
+ */
+void IRprint(IRFunction *F);
 
 #endif
 
