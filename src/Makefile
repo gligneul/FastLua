@@ -6,7 +6,7 @@
 # Your platform. See PLATS for possible values.
 PLAT= linux
 
-WARNINGS= -Wall -Wextra -Wshadow -pedantic
+WARNINGS= -Wall -Wextra -Wshadow -Wmissing-prototypes -pedantic
 
 CC= gcc -std=gnu99
 CFLAGS= -O0 -g $(WARNINGS) -Werror -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)

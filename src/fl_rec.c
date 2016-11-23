@@ -52,7 +52,7 @@
  * Produce the runtime information of the instruction.
  * Returns 1 if the instruction can be compiled, else returns 0.
  */
-int trygatherrt(CallInfo *ci, Instruction i, RuntimeRec *rt) {
+static int trygatherrt(CallInfo *ci, Instruction i, RuntimeRec *rt) {
   TValue *base = ci->u.l.base;
   TValue *k = getproto(ci->func)->k;
   switch (GET_OPCODE(i)) {

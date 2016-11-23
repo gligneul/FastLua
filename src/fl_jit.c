@@ -65,6 +65,7 @@ void flJ_compile(struct lua_State *L, TraceRec *tr) {
   (void)tr;
   (void)getnextpc;
 #if 0
+  printf("flJ: %d\n", (int)sizeof(IRCommand));
   int i;
   Proto *p = tr->p;
   l_mem pc = tr->start - p->code;

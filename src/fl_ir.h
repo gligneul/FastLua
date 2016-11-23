@@ -35,7 +35,18 @@
 struct lua_State;
 
 /*
- * Possible types for the ir values.
+ * Ids (indices) are used in this representation instead of pointers to
+ * reduce the structures size.
+ */
+typedef unsigned short IRId;
+
+/*
+ * All small integer values are promoted to word-size (ptr-size) integers.
+ */
+typedef l_mem IRInt;
+
+/*
+ * Types.
  */
 enum IRType {
   IR_CHAR,
@@ -47,26 +58,22 @@ enum IRType {
   IR_PTR,
 };
 
-#define IRisintt(t) (t <= IR_INTPTR)
-#define IRequivt(t1, t2) (t1 == t2 || (IRisintt(t1) && IRisintt(t2)))
+/* Verifies if a type is an integer. */
+#define flI_isintt(t) (t <= IR_INTPTR)
 
 /*
- * Constants
+ * Constants.
  */
-union IRConstant {
-  char c;
-  short s;
-  int i;
-  lua_Integer li;
-  lua_Number lf;
-  l_mem iptr;
+typedef union {
+  lua_Number f; /* float */
+  l_mem i; /* int */
   void *p;
-};
+} IRUConstant;
 
 /*
- * Commands
+ * Commands.
  */
-enum IRCommand {
+enum IRCommandType {
   IR_CONST,
   IR_GETARG,
   IR_LOAD,
@@ -77,29 +84,36 @@ enum IRCommand {
   IR_DIV,
 };
 
-/* 
- * SSA values
+/*
+ * Values are references to it's basic block and command.
  */
 typedef struct IRValue {
-  int id; /* unique id, indexed from 0 to n - 1 */
-  int type; /* value type */
-  int cmd; /* command that generated the value */
-  union { /* the command arguments */
-    union IRConstant konst;
-    struct { int n; } getarg;
-    struct { struct IRValue *mem; } load;
-    struct { struct IRValue *mem, *v; } store;
-    struct { struct IRValue *l, *r; } binop;
-  } args;
+  IRId bb;
+  IRId cmd;
 } IRValue;
+
+/* 
+ * Commands
+ */
+typedef struct IRCommand {
+  lu_byte type; /* value type */
+  lu_byte cmdtype; /* command type */
+  union { /* the command arguments */
+    IRUConstant konst;
+    struct { int n; } getarg;
+    struct { IRValue mem; } load;
+    struct { IRValue mem, v; } store;
+    struct { IRValue l, r; } binop;
+  } args;
+} IRCommand;
 
 /*
  * Basic blocks
  */
 typedef struct IRBBlock {
-  IRValue *values;
-  int nvalues;
-  int sizevalues;
+  IRCommand *cmds; /* commands vector */
+  int ncmds;
+  int sizecmds;
 } IRBBlock;
 
 /*
@@ -107,45 +121,45 @@ typedef struct IRBBlock {
  */
 typedef struct IRFunction {
   struct lua_State *L;
-  IRBBlock *currbb; /* current basic block */
-  IRBBlock *bbs; /* basic block array */
+  IRBBlock *bbs; /* basic blocks vector */
   int nbbs;
   int sizebbs;
+  IRId currbb; /* current basic block */
 } IRFunction;
+
+/* Given a bblock id, obtains the bblock. */
+#define flI_getbb(F, id) (&F->bbs[id])
+
+/* Given value, obtains the command. */
+#define flI_getcmd(F, value) (&F->bbs[(value).bb].cmds[(value).cmd])
 
 /*
  * Creates/destroy the ir function.
  */
-IRFunction *IRcreatefunc(struct lua_State *L);
-void IRdestroyfunc(IRFunction *F);
+IRFunction *flI_createfunc(struct lua_State *L);
+void flI_destroyfunc(IRFunction *F);
 
 /*
- * Creates a basic block.
- * The bblock is destroyed with the function.
+ * Creates a basic block and returns it id.
  */
-IRBBlock *IRcreatebb(IRFunction *F);
+IRId flI_createbb(IRFunction *F);
 
 /*
  * Sets the bblock as the current block.
  */
-#define IRsetcurrbb(F, bb) (F->currbb = bb)
+#define flI_setcurrbb(F, bbid) (F->currbb = bbid)
 
 /*
  * Creates a command and return the generated value.
- * The value is destroyed with the function.
  */
-IRValue* IRconst_c(IRFunction *F, char k);
-IRValue* IRconst_s(IRFunction *F, short k);
-IRValue* IRconst_i(IRFunction *F, int k);
-IRValue* IRconst_li(IRFunction *F, lua_Integer k);
-IRValue* IRconst_lf(IRFunction *F, lua_Number k);
-IRValue* IRconst_iptr(IRFunction *F, l_mem k);
-IRValue* IRconst_p(IRFunction *F, void *k);
-IRValue* IRgetarg(IRFunction *F, int type, int n);
-IRValue* IRload(IRFunction *F, int type, IRValue *mem);
-IRValue* IRstore(IRFunction *F, int type, IRValue *mem, IRValue *val);
-IRValue* IRbinop(IRFunction *F, int op, IRValue *l, IRValue *r);
-
+IRValue flI_consti(IRFunction *F, l_mem i);
+IRValue flI_constf(IRFunction *F, lua_Number f);
+IRValue flI_constp(IRFunction *F, void *p);
+IRValue flI_getarg(IRFunction *F, lu_byte type, int n);
+IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem);
+IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
+IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
+ 
 /*
  * DEBUG: Prints the function
  */

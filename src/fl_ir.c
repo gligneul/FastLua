@@ -31,115 +31,106 @@
 
 #include "fl_ir.h"
 
-static IRValue* createvalue(IRFunction *F, int type, int cmd) {
-  IRBBlock *bb = F->currbb;
-  int n = bb->nvalues++;
-  luaM_growvector(F->L, bb->values, n, bb->sizevalues, IRValue, MAX_INT, "");
-  IRValue* v = &bb->values[n];
-  v->id = n;
-  v->type = type;
-  v->cmd = cmd;
-  return v;
+/*
+ * Creates a command and returns the value by reference.
+ */
+static IRCommand *createvalue(IRFunction *F, lu_byte type, lu_byte cmdtype,
+    IRValue *v) {
+  IRBBlock *bb = flI_getbb(F, F->currbb);
+  IRId id = bb->ncmds++;
+  IRCommand *cmd = NULL;
+  luaM_growvector(F->L, bb->cmds, id, bb->sizecmds, IRCommand, MAX_INT, "");
+  v->bb = F->currbb;
+  v->cmd = id;
+  cmd = flI_getcmd(F, *v);
+  cmd->type = type;
+  cmd->cmdtype = cmdtype;
+  return cmd;
 }
 
-IRFunction *IRcreatefunc(struct lua_State *L) {
+IRFunction *flI_createfunc(struct lua_State *L) {
   IRFunction *F = luaM_new(L, IRFunction);
   F->L = L;
-  F->currbb = NULL;
   F->bbs = NULL;
   F->nbbs = 0;
   F->sizebbs = 0;
+  F->currbb = 0;
   return F;
 }
 
-void IRdestroyfunc(IRFunction *F) {
-  int i;
-  for (i = 0; i < F->nbbs; ++i) {
-    IRBBlock *bb = &F->bbs[i];
-    luaM_freearray(F->L, bb->values, bb->sizevalues);
-  }
+void flI_destroyfunc(IRFunction *F) {
+  IRBBlock *bb;
+  for (bb = F->bbs; bb != F->bbs + F->nbbs; ++bb)
+    luaM_freearray(F->L, bb->cmds, bb->sizecmds);
   luaM_freearray(F->L, F->bbs, F->sizebbs);
   luaM_free(F->L, F);
 }
 
-IRBBlock *IRcreatebb(IRFunction *F) {
+IRId flI_createbb(IRFunction *F) {
   IRBBlock *bb = NULL;
-  luaM_growvector(F->L, F->bbs, F->nbbs, F->sizebbs, IRBBlock, MAX_INT, "");
-  bb = &F->bbs[F->nbbs++];
-  bb->values = NULL;
-  bb->nvalues = 0;
-  bb->sizevalues = 0;
-  return bb;
+  IRId id = F->nbbs++;
+  luaM_growvector(F->L, F->bbs, id, F->sizebbs, IRBBlock, MAX_INT, "");
+  bb = &F->bbs[id];
+  bb->cmds = NULL;
+  bb->ncmds = 0;
+  bb->sizecmds = 0;
+  return id;
 }
 
-IRValue* IRconst_c(IRFunction *F, char k) {
-  IRValue *v = createvalue(F, IR_CHAR, IR_CONST);
-  v->args.konst.c = k;
+IRValue flI_consti(IRFunction *F, IRInt k) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, IR_INT, IR_CONST, &v);
+  cmd->args.konst.i = k;
   return v;
 }
 
-IRValue* IRconst_s(IRFunction *F, short k) {
-  IRValue *v = createvalue(F, IR_SHORT, IR_CONST);
-  v->args.konst.s = k;
+IRValue flI_constf(IRFunction *F, lua_Number k) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, IR_LUAFLT, IR_CONST, &v);
+  cmd->args.konst.f = k;
   return v;
 }
 
-IRValue* IRconst_i(IRFunction *F, int k) {
-  IRValue *v = createvalue(F, IR_INT, IR_CONST);
-  v->args.konst.i = k;
+IRValue flI_constp(IRFunction *F, void *k) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, IR_PTR, IR_CONST, &v);
+  cmd->args.konst.p = k;
   return v;
 }
 
-IRValue* IRconst_li(IRFunction *F, lua_Integer k) {
-  IRValue *v = createvalue(F, IR_LUAINT, IR_CONST);
-  v->args.konst.li = k;
+IRValue flI_getarg(IRFunction *F, lu_byte type, int n) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, type, IR_GETARG, &v);
+  cmd->args.getarg.n = n;
   return v;
 }
 
-IRValue* IRconst_lf(IRFunction *F, lua_Number k) {
-  IRValue *v = createvalue(F, IR_LUAFLT, IR_CONST);
-  v->args.konst.lf = k;
+IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, type, IR_LOAD, &v);
+  cmd->args.load.mem = mem;
   return v;
 }
 
-IRValue* IRconst_iptr(IRFunction *F, l_mem k) {
-  IRValue *v = createvalue(F, IR_INTPTR, IR_CONST);
-  v->args.konst.iptr = k;
+IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, type, IR_STORE, &v);
+  cmd->args.store.mem = mem;
+  cmd->args.store.v = val;
+  assert((flI_getcmd(F, val)->type == type) ||
+         (flI_getcmd(F, val)->type == IR_INTPTR && flI_isintt(type)));
   return v;
 }
 
-IRValue* IRconst_p(IRFunction *F, void *k) {
-  IRValue *v = createvalue(F, IR_PTR, IR_CONST);
-  v->args.konst.p = k;
-  return v;
-}
-
-IRValue* IRgetarg(IRFunction *F, int type, int n) {
-  IRValue *v = createvalue(F, type, IR_GETARG);
-  v->args.getarg.n = n;
-  return v;
-}
-
-IRValue* IRload(IRFunction *F, int type, IRValue *mem) {
-  IRValue *v = createvalue(F, type, IR_LOAD);
-  v->args.load.mem = mem;
-  return v;
-}
-
-IRValue* IRstore(IRFunction *F, int type, IRValue *mem, IRValue *val) {
-  IRValue *v = createvalue(F, type, IR_STORE);
-  assert(IRequivt(type, v->type));
-  v->args.store.mem = mem;
-  v->args.store.v = val;
-  return v;
-}
-
-IRValue* IRbinop(IRFunction *F, int op, IRValue *l, IRValue *r) {
-  int outt = IRisintt(l->type) ? IR_LUAINT : l->type; /* promote to luaint */
-  IRValue *v = createvalue(F, outt, op);
-  assert(IRequivt(l->type, r->type));
-  v->args.binop.l = l;
-  v->args.binop.r = r;
+IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r) {
+  /* promote integers to luaint */
+  IRCommand *lcmd = flI_getcmd(F, l);
+  lu_byte outt = flI_isintt(lcmd->type) ? IR_INTPTR : lcmd->type;
+  IRValue v;
+  IRCommand *cmd = createvalue(F, outt, op, &v);
+  cmd->args.binop.l = l;
+  cmd->args.binop.r = r;
+  assert(lcmd->type == flI_getcmd(F, r)->type);
   return v;
 }
 
@@ -147,7 +138,7 @@ IRValue* IRbinop(IRFunction *F, int op, IRValue *l, IRValue *r) {
  * Printing functions for debug
  */
 
-static void printtype(int type) {
+static void printtype(lu_byte type) {
   switch (type) {
     case IR_CHAR:   printf("char"); break;
     case IR_SHORT:  printf("short"); break;
@@ -160,20 +151,16 @@ static void printtype(int type) {
   }
 }
 
-static void printconst(int type, union IRConstant k) {
+static void printconst(lu_byte type, IRUConstant k) {
   switch (type) {
-    case IR_CHAR:   printf("%d", k.c); break;
-    case IR_SHORT:  printf("%d", k.s); break;
-    case IR_INT:    printf("%d", k.i); break;
-    case IR_LUAINT: printf("%lli", k.li); break;
-    case IR_INTPTR: printf("%li", k.iptr); break;
-    case IR_LUAFLT: printf("%f", k.lf); break;
+    case IR_INTPTR: printf("%td", k.i); break;
+    case IR_LUAFLT: printf("%f", k.f); break;
     case IR_PTR:    printf("%p", k.p); break;
     default: assert(0); break;
   }
 }
 
-static void printbinop(int cmd) {
+static void printbinop(lu_byte cmd) {
   switch (cmd) {
     case IR_ADD: printf("add"); break;
     case IR_SUB: printf("sub"); break;
@@ -183,44 +170,55 @@ static void printbinop(int cmd) {
   }
 }
 
-static void printvalue(IRValue *v) {
-  printf("v%d : ", v->id);
-  printtype(v->type);
+static void printvalue(IRValue v) {
+  printf("v%d_%d", v.bb, v.cmd);
+}
+
+static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
+  IRValue v = {bbid, cmdid};
+  IRCommand *cmd = flI_getcmd(F, v);
+  printvalue(v);
+  printf(" : ");
+  printtype(cmd->type);
   printf(" = ");
-  switch (v->cmd) {
+  switch (cmd->cmdtype) {
     case IR_CONST:
       printf("const ");
-      printconst(v->type, v->args.konst);
+      printconst(cmd->type, cmd->args.konst);
       break;
     case IR_GETARG:
-      printf("getarg %d", v->args.getarg.n);
+      printf("getarg %d", cmd->args.getarg.n);
       break;
     case IR_LOAD:
-      printf("load v%d", v->args.load.mem->id);
+      printf("load ");
+      printvalue(cmd->args.load.mem);
       break;
     case IR_STORE:
-      printf("store v%d <- v%d", v->args.store.mem->id, v->args.store.v->id);
+      printf("store ");
+      printvalue(cmd->args.store.mem);
+      printf(" <- ");
+      printvalue(cmd->args.store.v);
       break;
     case IR_ADD:
     case IR_SUB:
     case IR_MUL:
     case IR_DIV:
-      printbinop(v->cmd);
-      printf(" v%d v%d", v->args.binop.l->id, v->args.binop.r->id);
+      printbinop(cmd->cmdtype);
+      printvalue(cmd->args.binop.l);
+      printvalue(cmd->args.binop.r);
       break;
   }
   printf("\n");
 }
 
 void IRprint(IRFunction *F) {
-  IRBBlock *bb;
-  IRValue *v;
+  IRId bbid, cmdid;
   printf("IR DEBUG - F (%p)\n", (void *)F);
-  for (bb = F->bbs; bb != F->bbs + F->nbbs; ++bb) {
-    printf("bblock (%p):\n", (void *)bb);
-    for (v = bb->values; v != bb->values + bb->nvalues; ++v) {
-      printvalue(v);
-    }
+  for (bbid = 0; bbid < F->nbbs; ++bbid) {
+    IRBBlock *bb = flI_getbb(F, bbid);
+    printf("bblock %d:\n", bbid);
+    for (cmdid = 0; cmdid < bb->ncmds; ++cmdid)
+      printcmd(F, bbid, cmdid);
     printf("\n");
   }
   printf("\n");
