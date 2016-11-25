@@ -134,69 +134,79 @@ IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r) {
   return v;
 }
 
+IRValue flI_return(IRFunction *F, IRValue val) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, IR_VOID, IR_RET, &v);
+  cmd->args.ret.v = val;
+  return v;
+}
+
 /*
  * Printing functions for debug
  */
 
 static void printtype(lu_byte type) {
   switch (type) {
-    case IR_CHAR:   printf("char"); break;
-    case IR_SHORT:  printf("short"); break;
-    case IR_INT:    printf("int"); break;
-    case IR_LUAINT: printf("luaint"); break;
-    case IR_INTPTR: printf("intptr"); break;
-    case IR_LUAFLT: printf("luafloat"); break;
-    case IR_PTR:    printf("ptr"); break;
+    case IR_CHAR:   flI_log("char"); break;
+    case IR_SHORT:  flI_log("short"); break;
+    case IR_INT:    flI_log("int"); break;
+    case IR_LUAINT: flI_log("luaint"); break;
+    case IR_INTPTR: flI_log("intptr"); break;
+    case IR_LUAFLT: flI_log("luafloat"); break;
+    case IR_PTR:    flI_log("ptr"); break;
     default: assert(0); break;
   }
 }
 
 static void printconst(lu_byte type, IRUConstant k) {
   switch (type) {
-    case IR_INTPTR: printf("%td", k.i); break;
-    case IR_LUAFLT: printf("%f", k.f); break;
-    case IR_PTR:    printf("%p", k.p); break;
+    case IR_INTPTR: flI_log("%td", k.i); break;
+    case IR_LUAFLT: flI_log("%f", k.f); break;
+    case IR_PTR:    flI_log("%p", k.p); break;
     default: assert(0); break;
   }
 }
 
 static void printbinop(lu_byte cmd) {
   switch (cmd) {
-    case IR_ADD: printf("add"); break;
-    case IR_SUB: printf("sub"); break;
-    case IR_MUL: printf("mul"); break;
-    case IR_DIV: printf("div"); break;
+    case IR_ADD: flI_log("add"); break;
+    case IR_SUB: flI_log("sub"); break;
+    case IR_MUL: flI_log("mul"); break;
+    case IR_DIV: flI_log("div"); break;
     default: assert(0); break;
   }
 }
 
 static void printvalue(IRValue v) {
-  printf("v%d_%d", v.bb, v.cmd);
+  flI_log("v%d.%d", v.bb, v.cmd);
 }
 
 static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
   IRValue v = {bbid, cmdid};
   IRCommand *cmd = flI_getcmd(F, v);
-  printvalue(v);
-  printf(" : ");
-  printtype(cmd->type);
-  printf(" = ");
+  flI_log("  ");
+  if (cmd->type != IR_VOID) {
+    printvalue(v);
+    flI_log(" : ");
+    printtype(cmd->type);
+    flI_log(" = ");
+  }
   switch (cmd->cmdtype) {
     case IR_CONST:
-      printf("const ");
+      flI_log("const ");
       printconst(cmd->type, cmd->args.konst);
       break;
     case IR_GETARG:
-      printf("getarg %d", cmd->args.getarg.n);
+      flI_log("getarg %d", cmd->args.getarg.n);
       break;
     case IR_LOAD:
-      printf("load ");
+      flI_log("load ");
       printvalue(cmd->args.load.mem);
       break;
     case IR_STORE:
-      printf("store ");
+      flI_log("store ");
       printvalue(cmd->args.store.mem);
-      printf(" <- ");
+      flI_log(" <- ");
       printvalue(cmd->args.store.v);
       break;
     case IR_ADD:
@@ -207,21 +217,27 @@ static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
       printvalue(cmd->args.binop.l);
       printvalue(cmd->args.binop.r);
       break;
+    case IR_RET:
+      flI_log("ret ");
+      printvalue(cmd->args.ret.v);
+      break;
+    default:
+      assert(0);
   }
-  printf("\n");
+  flI_log("\n");
 }
 
-void IRprint(IRFunction *F) {
+void flI_print(IRFunction *F) {
   IRId bbid, cmdid;
-  printf("IR DEBUG - F (%p)\n", (void *)F);
+  flI_log("IR DEBUG - F (%p)\n", (void *)F);
   for (bbid = 0; bbid < F->nbbs; ++bbid) {
     IRBBlock *bb = flI_getbb(F, bbid);
-    printf("bblock %d:\n", bbid);
+    flI_log("bblock %d:\n", bbid);
     for (cmdid = 0; cmdid < bb->ncmds; ++cmdid)
       printcmd(F, bbid, cmdid);
-    printf("\n");
+    flI_log("\n");
   }
-  printf("\n");
+  flI_log("\n");
 }
 
 

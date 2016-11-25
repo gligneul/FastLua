@@ -56,6 +56,7 @@ enum IRType {
   IR_INTPTR,
   IR_LUAFLT,
   IR_PTR,
+  IR_VOID,
 };
 
 /* Verifies if a type is an integer. */
@@ -82,6 +83,7 @@ enum IRCommandType {
   IR_SUB,
   IR_MUL,
   IR_DIV,
+  IR_RET,
 };
 
 /*
@@ -104,6 +106,7 @@ typedef struct IRCommand {
     struct { IRValue mem; } load;
     struct { IRValue mem, v; } store;
     struct { IRValue l, r; } binop;
+    struct { IRValue v; } ret;
   } args;
 } IRCommand;
 
@@ -159,11 +162,13 @@ IRValue flI_getarg(IRFunction *F, lu_byte type, int n);
 IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem);
 IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
 IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
+IRValue flI_return(IRFunction *F, IRValue v);
  
 /*
  * DEBUG: Prints the function
  */
-void IRprint(IRFunction *F);
+#define flI_log(...) fprintf(stderr, __VA_ARGS__)
+void flI_print(IRFunction *F);
 
 #endif
 

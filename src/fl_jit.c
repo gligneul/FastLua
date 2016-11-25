@@ -64,6 +64,17 @@ void flJ_compile(struct lua_State *L, TraceRec *tr) {
   (void)L;
   (void)tr;
   (void)getnextpc;
+
+  IRFunction *F = flI_createfunc(L);
+  IRId bb = flI_createbb(F);
+  flI_setcurrbb(F, bb);
+
+  IRValue lstate = flI_getarg(F, IR_PTR, 0);
+  flI_return(F, lstate);
+
+  flI_print(F);
+  flI_destroyfunc(F);
+
 #if 0
   printf("flJ: %d\n", (int)sizeof(IRCommand));
   int i;
