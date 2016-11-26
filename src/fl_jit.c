@@ -26,12 +26,62 @@
 
 #include "lprefix.h"
 
+#include "lmem.h"
 #include "lopcodes.h"
 #include "lstate.h"
 
 #include "fl_ir.h"
 #include "fl_jit.h"
 
+/*
+ * Stores the jit compilation state.
+ */
+typedef struct JitState {
+  lua_State *L;
+  TraceRec *tr;
+  IRFunction *F;
+  IRValue vstate;
+  IRValue vci;
+  IRValue vbase;
+  IRValue *rtable;
+} JitState;
+
+/*
+ * Creates/destroy the jit state.
+ */
+static JitState *createjitstate(lua_State *L, TraceRec *tr) {
+  JitState *J = luaM_new(L, JitState);
+  J->L = L;
+  J->tr = tr;
+  J->F = flI_createfunc(L);
+  J->vstate = IRNullValue;
+  J->vci = IRNullValue;
+  J->vbase = IRNullValue;
+  J->rtable = luaM_newvector(L, tr->p->maxstacksize, IRValue);
+  return J;
+}
+
+static void destroyjitstate(JitState *J) {
+  flI_destroyfunc(J->F);
+  luaM_freearray(J->L, J->rtable, J->tr->p->maxstacksize);
+  luaM_free(J->L, J);
+}
+
+/*
+ * Creates the entry basic block.
+ * This block contains the trace (loop) invariants.
+ */
+static void initentryblock(JitState *J) {
+  IRFunction *F = J->F;
+  flI_createbb(F);
+  J->vstate = flI_getarg(F, IR_PTR, 0);
+  J->vci = flI_getarg(F, IR_PTR, 1);
+  J->vbase = flI_getarg(F, IR_PTR, 2);
+}
+
+/*
+ * Obtains the next instruction position.
+ */
 static l_mem getnextpc(l_mem oldpc, Instruction i) {
   l_mem pc = oldpc;
   switch (GET_OPCODE(i)) {
@@ -52,6 +102,7 @@ TraceRec *flJ_createtracerec(struct lua_State *L) {
   tr->n = 0;
   tr->rt = NULL;
   tr->rtsize = 0;
+  tr->completeloop = 0;
   return tr;
 }
 
@@ -61,32 +112,20 @@ void flJ_destroytracerec(struct lua_State *L, TraceRec *tr) {
 }
 
 void flJ_compile(struct lua_State *L, TraceRec *tr) {
-  (void)L;
-  (void)tr;
-  (void)getnextpc;
-
-  IRFunction *F = flI_createfunc(L);
-  IRId bb = flI_createbb(F);
-  flI_setcurrbb(F, bb);
-
-  IRValue lstate = flI_getarg(F, IR_PTR, 0);
-  flI_return(F, lstate);
-
-  flI_print(F);
-  flI_destroyfunc(F);
-
-#if 0
-  printf("flJ: %d\n", (int)sizeof(IRCommand));
-  int i;
+  JitState *J = createjitstate(L, tr);
+  IRFunction *F = J->F;
   Proto *p = tr->p;
-  l_mem pc = tr->start - p->code;
-  printf(" >>> ");
-  for (i = 0; i < tr->n; ++i) {
-    int op = GET_OPCODE(p->code[pc]);
-    printf("[%lu]%s, ", pc, luaP_opnames[op]);
-    pc = getnextpc(pc, p->code[pc]);
+  initentryblock(J);
+  if (tr->completeloop) {
+    IRId mainbb = flI_createbb(F);
+    int i;
+    l_mem pc = tr->start - p->code;
+    for (i = 0; i < tr->n; ++i) {
+      (void)mainbb;
+      pc = getnextpc(pc, p->code[pc]);
+    }
   }
-  printf("\n");
-#endif
+  flI_print(J->F);
+  destroyjitstate(J);
 }
 

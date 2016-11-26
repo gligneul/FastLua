@@ -30,6 +30,8 @@
 #ifndef fl_jit_h
 #define fl_jit_h
 
+#include "llimits.h"
+
 struct lua_State;
 
 /*
@@ -38,9 +40,7 @@ struct lua_State;
 typedef struct RuntimeRec {
   union {
     lu_byte forlooptype;
-    struct {
-      lu_byte rb, rc;
-    } binoptypes;
+    struct { lu_byte rb, rc; } binoptypes;
   } u;
 } RuntimeRec;
 
@@ -53,6 +53,7 @@ typedef struct TraceRec {
   int n;
   RuntimeRec *rt;
   int rtsize;
+  lu_byte completeloop;
 } TraceRec;
 
 /*

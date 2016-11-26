@@ -30,6 +30,8 @@
 #ifndef fl_ir_h
 #define fl_ir_h
 
+#include <limits.h>
+
 #include "llimits.h"
 
 struct lua_State;
@@ -39,6 +41,7 @@ struct lua_State;
  * reduce the structures size.
  */
 typedef unsigned short IRId;
+#define IRNullId USHRT_MAX
 
 /*
  * All small integer values are promoted to word-size (ptr-size) integers.
@@ -84,6 +87,8 @@ enum IRCommandType {
   IR_MUL,
   IR_DIV,
   IR_RET,
+  IR_LOOPPHI,
+  IR_STUB,
 };
 
 /*
@@ -93,6 +98,13 @@ typedef struct IRValue {
   IRId bb;
   IRId cmd;
 } IRValue;
+
+/*
+ * Null values.
+ */
+extern const IRValue IRNullValue;
+#define flI_isnullvalue(v) ((v).bb == IRNullId || (v).cmd == IRNullId)
+
 
 /* 
  * Commands
@@ -107,6 +119,7 @@ typedef struct IRCommand {
     struct { IRValue mem, v; } store;
     struct { IRValue l, r; } binop;
     struct { IRValue v; } ret;
+    struct { IRValue entry, loop; } loopphi;
   } args;
 } IRCommand;
 
@@ -143,7 +156,7 @@ IRFunction *flI_createfunc(struct lua_State *L);
 void flI_destroyfunc(IRFunction *F);
 
 /*
- * Creates a basic block and returns it id.
+ * Creates a basic block, set as the current one and returns it's id.
  */
 IRId flI_createbb(IRFunction *F);
 
@@ -163,6 +176,8 @@ IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem);
 IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
 IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
 IRValue flI_return(IRFunction *F, IRValue v);
+IRValue flI_loopphi(IRFunction *F, lu_byte type);
+IRValue flI_stub(IRFunction *F);
  
 /*
  * DEBUG: Prints the function

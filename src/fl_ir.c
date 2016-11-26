@@ -31,6 +31,8 @@
 
 #include "fl_ir.h"
 
+const IRValue IRNullValue = {IRNullId, IRNullId};
+
 /*
  * Creates a command and returns the value by reference.
  */
@@ -74,6 +76,7 @@ IRId flI_createbb(IRFunction *F) {
   bb->cmds = NULL;
   bb->ncmds = 0;
   bb->sizecmds = 0;
+  flI_setcurrbb(F, id);
   return id;
 }
 
@@ -138,6 +141,20 @@ IRValue flI_return(IRFunction *F, IRValue val) {
   IRValue v;
   IRCommand *cmd = createvalue(F, IR_VOID, IR_RET, &v);
   cmd->args.ret.v = val;
+  return v;
+}
+
+IRValue flI_loopphi(IRFunction *F, lu_byte type) {
+  IRValue v;
+  IRCommand *cmd = createvalue(F, type, IR_LOOPPHI, &v);
+  cmd->args.loopphi.entry = IRNullValue;
+  cmd->args.loopphi.loop = IRNullValue;
+  return v;
+}
+
+IRValue flI_stub(IRFunction *F) {
+  IRValue v;
+  createvalue(F, IR_VOID, IR_STUB, &v);
   return v;
 }
 

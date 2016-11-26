@@ -97,11 +97,13 @@ void flR_record_(struct lua_State *L, struct CallInfo* ci) {
   TraceRec *tr = tracerec(L);
   const Instruction *i = ci->u.l.savedpc;
   if (!tr->start) {
+    /* start the recording */
     tr->p = getproto(ci->func);
     tr->start = i;
   }
   else if (tr->start == i) {
-    /* back to the start */
+    /* back to the loop start */
+    tr->completeloop = 1;
     flR_stop(L);
     return;
   }
