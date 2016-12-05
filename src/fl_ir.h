@@ -103,8 +103,7 @@ typedef struct IRValue {
  * Null values.
  */
 extern const IRValue IRNullValue;
-#define flI_isnullvalue(v) ((v).bb == IRNullId || (v).cmd == IRNullId)
-
+#define flI_isnullvalue(v) ((v).bb == IRNullId && (v).cmd == IRNullId)
 
 /* 
  * Commands
@@ -178,6 +177,24 @@ IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
 IRValue flI_return(IRFunction *F, IRValue v);
 IRValue flI_loopphi(IRFunction *F, lu_byte type);
 IRValue flI_stub(IRFunction *F);
+
+/*
+ * Creates a new command that is a copy of this one.
+ */
+IRValue flI_copy(IRFunction *F, IRCommand *cmd);
+
+/*
+ * Obtains the field address.
+ */
+#define flI_getfieldptr(F, ptr, strukt, field) \
+  (offsetof(strukt, field) == 0 ? ptr : \
+    flI_binop(F, IR_ADD, ptr, flI_consti(F, offsetof(strukt, field))))
+
+/*
+ * Loads the field value.
+ */
+#define flI_loadfield(F, type, ptr, strukt, field) \
+  (flI_load(F, type, flI_getfieldptr(F, ptr, strukt, field)))
  
 /*
  * DEBUG: Prints the function

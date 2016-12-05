@@ -37,11 +37,9 @@ struct lua_State;
 /*
  * Runtime information for each instruction
  */
-typedef struct RuntimeRec {
-  union {
-    lu_byte forlooptype;
-    struct { lu_byte rb, rc; } binoptypes;
-  } u;
+typedef union RuntimeRec {
+  lu_byte forlooptype;
+  struct { lu_byte rb, rc; } binoptypes;
 } RuntimeRec;
 
 /*

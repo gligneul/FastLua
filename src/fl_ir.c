@@ -82,7 +82,7 @@ IRId flI_createbb(IRFunction *F) {
 
 IRValue flI_consti(IRFunction *F, IRInt k) {
   IRValue v;
-  IRCommand *cmd = createvalue(F, IR_INT, IR_CONST, &v);
+  IRCommand *cmd = createvalue(F, IR_INTPTR, IR_CONST, &v);
   cmd->args.konst.i = k;
   return v;
 }
@@ -133,7 +133,7 @@ IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r) {
   IRCommand *cmd = createvalue(F, outt, op, &v);
   cmd->args.binop.l = l;
   cmd->args.binop.r = r;
-  assert(lcmd->type == flI_getcmd(F, r)->type);
+  // assert(lcmd->type == flI_getcmd(F, r)->type);
   return v;
 }
 
@@ -157,6 +157,14 @@ IRValue flI_stub(IRFunction *F) {
   createvalue(F, IR_VOID, IR_STUB, &v);
   return v;
 }
+
+IRValue flI_copy(IRFunction *F, IRCommand *cmd) {
+  IRValue v;
+  IRCommand *newcmd = createvalue(F, IR_VOID, IR_STUB, &v);
+  *newcmd = *cmd;
+  return v;
+}
+
 
 /*
  * Printing functions for debug
@@ -231,7 +239,9 @@ static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
     case IR_MUL:
     case IR_DIV:
       printbinop(cmd->cmdtype);
+      flI_log(" ");
       printvalue(cmd->args.binop.l);
+      flI_log(" ");
       printvalue(cmd->args.binop.r);
       break;
     case IR_RET:

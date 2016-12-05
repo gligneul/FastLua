@@ -61,14 +61,14 @@ static int trygatherrt(CallInfo *ci, Instruction i, RuntimeRec *rt) {
     case OP_MUL: {
       TValue *rkb = RKB(i);
       TValue *rkc = RKC(i);
-      rt->u.binoptypes.rb = ttype(rkb);
-      rt->u.binoptypes.rc = ttype(rkc);
+      rt->binoptypes.rb = ttype(rkb);
+      rt->binoptypes.rc = ttype(rkc);
       /* only compiles int/float ops */
       return ttisnumber(rkb) && ttisnumber(rkc);
     }
     case OP_FORLOOP: {
       TValue *ra = RA(i);
-      rt->u.forlooptype = ttype(ra);
+      rt->forlooptype = ttype(ra);
       return 1;
     }
     default:
