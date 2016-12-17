@@ -96,7 +96,7 @@ IRValue flI_constf(IRFunction *F, lua_Number k) {
 
 IRValue flI_constp(IRFunction *F, void *k) {
   IRValue v;
-  IRCommand *cmd = createvalue(F, IR_PTR, IR_CONST, &v);
+  IRCommand *cmd = createvalue(F, IR_INTPTR, IR_CONST, &v);
   cmd->args.konst.p = k;
   return v;
 }
@@ -110,8 +110,11 @@ IRValue flI_getarg(IRFunction *F, lu_byte type, int n) {
 
 IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem) {
   IRValue v;
-  IRCommand *cmd = createvalue(F, type, IR_LOAD, &v);
+  /* promote integers to intptr */
+  lu_byte finaltype = flI_isintt(type) ? IR_INTPTR : type;
+  IRCommand *cmd = createvalue(F, finaltype, IR_LOAD, &v);
   cmd->args.load.mem = mem;
+  cmd->args.load.type = type;
   return v;
 }
 
@@ -126,14 +129,12 @@ IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val) {
 }
 
 IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r) {
-  /* promote integers to luaint */
   IRCommand *lcmd = flI_getcmd(F, l);
-  lu_byte outt = flI_isintt(lcmd->type) ? IR_INTPTR : lcmd->type;
   IRValue v;
-  IRCommand *cmd = createvalue(F, outt, op, &v);
+  IRCommand *cmd = createvalue(F, lcmd->type, op, &v);
   cmd->args.binop.l = l;
   cmd->args.binop.r = r;
-  // assert(lcmd->type == flI_getcmd(F, r)->type);
+  assert(lcmd->type == flI_getcmd(F, r)->type);
   return v;
 }
 
@@ -178,7 +179,6 @@ static void printtype(lu_byte type) {
     case IR_LUAINT: flI_log("luaint"); break;
     case IR_INTPTR: flI_log("intptr"); break;
     case IR_LUAFLT: flI_log("luafloat"); break;
-    case IR_PTR:    flI_log("ptr"); break;
     default: assert(0); break;
   }
 }
@@ -187,7 +187,6 @@ static void printconst(lu_byte type, IRUConstant k) {
   switch (type) {
     case IR_INTPTR: flI_log("%td", k.i); break;
     case IR_LUAFLT: flI_log("%f", k.f); break;
-    case IR_PTR:    flI_log("%p", k.p); break;
     default: assert(0); break;
   }
 }
@@ -202,16 +201,16 @@ static void printbinop(lu_byte cmd) {
   }
 }
 
-static void printvalue(IRValue v) {
-  flI_log("v%d.%d", v.bb, v.cmd);
+static void printvalue(IRValue v, int bbstart[]) {
+  flI_log("v%d", bbstart[v.bb] + v.cmd);
 }
 
-static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
+static void printcmd(IRFunction *F, IRId bbid, IRId cmdid, int bbstart[]) {
   IRValue v = {bbid, cmdid};
   IRCommand *cmd = flI_getcmd(F, v);
   flI_log("  ");
   if (cmd->type != IR_VOID) {
-    printvalue(v);
+    printvalue(v, bbstart);
     flI_log(" : ");
     printtype(cmd->type);
     flI_log(" = ");
@@ -226,13 +225,15 @@ static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
       break;
     case IR_LOAD:
       flI_log("load ");
-      printvalue(cmd->args.load.mem);
+      printtype(cmd->args.load.type);
+      flI_log(" ");
+      printvalue(cmd->args.load.mem, bbstart);
       break;
     case IR_STORE:
       flI_log("store ");
-      printvalue(cmd->args.store.mem);
+      printvalue(cmd->args.store.mem, bbstart);
       flI_log(" <- ");
-      printvalue(cmd->args.store.v);
+      printvalue(cmd->args.store.v, bbstart);
       break;
     case IR_ADD:
     case IR_SUB:
@@ -240,13 +241,13 @@ static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
     case IR_DIV:
       printbinop(cmd->cmdtype);
       flI_log(" ");
-      printvalue(cmd->args.binop.l);
+      printvalue(cmd->args.binop.l, bbstart);
       flI_log(" ");
-      printvalue(cmd->args.binop.r);
+      printvalue(cmd->args.binop.r, bbstart);
       break;
     case IR_RET:
       flI_log("ret ");
-      printvalue(cmd->args.ret.v);
+      printvalue(cmd->args.ret.v, bbstart);
       break;
     default:
       assert(0);
@@ -255,13 +256,19 @@ static void printcmd(IRFunction *F, IRId bbid, IRId cmdid) {
 }
 
 void flI_print(IRFunction *F) {
+  int ncmd = 0;
+  int bbstart[F->nbbs];
   IRId bbid, cmdid;
+  for (bbid = 0; bbid < F->nbbs; ++bbid) {
+    bbstart[bbid] = ncmd;
+    ncmd += F->bbs[bbid].ncmds;
+  }
   flI_log("IR DEBUG - F (%p)\n", (void *)F);
   for (bbid = 0; bbid < F->nbbs; ++bbid) {
     IRBBlock *bb = flI_getbb(F, bbid);
     flI_log("bblock %d:\n", bbid);
     for (cmdid = 0; cmdid < bb->ncmds; ++cmdid)
-      printcmd(F, bbid, cmdid);
+      printcmd(F, bbid, cmdid, bbstart);
     flI_log("\n");
   }
   flI_log("\n");

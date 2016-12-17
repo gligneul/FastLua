@@ -58,7 +58,6 @@ enum IRType {
   IR_LUAINT,
   IR_INTPTR,
   IR_LUAFLT,
-  IR_PTR,
   IR_VOID,
 };
 
@@ -114,7 +113,7 @@ typedef struct IRCommand {
   union { /* the command arguments */
     IRUConstant konst;
     struct { int n; } getarg;
-    struct { IRValue mem; } load;
+    struct { IRValue mem; lu_byte type; } load;
     struct { IRValue mem, v; } store;
     struct { IRValue l, r; } binop;
     struct { IRValue v; } ret;

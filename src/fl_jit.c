@@ -89,9 +89,9 @@ static void destroyjitstate(JitState *J) {
 static void initentryblock(JitState *J) {
   IRFunction *F = J->F;
   flI_createbb(F);
-  J->lstate = flI_getarg(F, IR_PTR, 0);
-  J->ci = flI_getarg(F, IR_PTR, 1);
-  J->base = flI_getarg(F, IR_PTR, 2);
+  J->lstate = flI_getarg(F, IR_INTPTR, 0);
+  J->ci = flI_getarg(F, IR_INTPTR, 1);
+  J->base = flI_getarg(F, IR_INTPTR, 2);
 }
 
 /*
