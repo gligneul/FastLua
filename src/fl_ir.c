@@ -94,13 +94,6 @@ IRValue flI_constf(IRFunction *F, lua_Number k) {
   return v;
 }
 
-IRValue flI_constp(IRFunction *F, void *k) {
-  IRValue v;
-  IRCommand *cmd = createvalue(F, IR_INTPTR, IR_CONST, &v);
-  cmd->args.konst.p = k;
-  return v;
-}
-
 IRValue flI_getarg(IRFunction *F, lu_byte type, int n) {
   IRValue v;
   IRCommand *cmd = createvalue(F, type, IR_GETARG, &v);
@@ -145,11 +138,13 @@ IRValue flI_return(IRFunction *F, IRValue val) {
   return v;
 }
 
-IRValue flI_loopphi(IRFunction *F, lu_byte type) {
+IRValue flI_phi(IRFunction *F, IRValue entry, IRValue loop) {
+  IRCommand *entrycmd = flI_getcmd(F, entry);
   IRValue v;
-  IRCommand *cmd = createvalue(F, type, IR_LOOPPHI, &v);
-  cmd->args.loopphi.entry = IRNullValue;
-  cmd->args.loopphi.loop = IRNullValue;
+  IRCommand *cmd = createvalue(F, entrycmd->type, IR_PHI, &v);
+  cmd->args.phi.entry = entry;
+  cmd->args.phi.loop = loop;
+  assert(entrycmd->type == flI_getcmd(F, loop)->type);
   return v;
 }
 
@@ -159,13 +154,55 @@ IRValue flI_stub(IRFunction *F) {
   return v;
 }
 
-IRValue flI_copy(IRFunction *F, IRCommand *cmd) {
-  IRValue v;
-  IRCommand *newcmd = createvalue(F, IR_VOID, IR_STUB, &v);
-  *newcmd = *cmd;
-  return v;
+/*
+ * Replace helper.
+ */
+#define replacehelper(cell, old, new) \
+  do { if (flI_valueeq(cell, old)) cell = new; } while (0)
+
+void flI_replacevalue(IRFunction *F, IRId bbid, IRValue old, IRValue new) {
+  IRBBlock *bb = flI_getbb(F, bbid);
+  IRId cmdid;
+  for (cmdid = 0; cmdid < bb->ncmds; ++cmdid) {
+    IRValue v = {bbid, cmdid};
+    IRCommand *cmd = flI_getcmd(F, v);
+    if (!flI_valueeq(v, old) && !flI_valueeq(v, new)) {
+      switch (cmd->cmdtype) {
+        case IR_CONST: case IR_GETARG: case IR_STUB:
+          /* do nothing */
+          break;
+        case IR_LOAD:
+          replacehelper(cmd->args.load.mem, old, new);
+          break;
+        case IR_STORE:
+          replacehelper(cmd->args.store.mem, old, new);
+          replacehelper(cmd->args.store.v, old, new);
+          break;
+        case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV:
+          replacehelper(cmd->args.binop.l, old, new);
+          replacehelper(cmd->args.binop.r, old, new);
+          break;
+        case IR_RET:
+          replacehelper(cmd->args.ret.v, old, new);
+          break;
+        case IR_PHI:
+          replacehelper(cmd->args.phi.entry, old, new);
+          replacehelper(cmd->args.phi.loop, old, new);
+          break;
+        default:
+          assert(0);
+      }
+    }
+  }
 }
 
+void flI_swapvalues(IRFunction *F, IRValue a, IRValue b) {
+  IRCommand *acmd = flI_getcmd(F, a);
+  IRCommand *bcmd = flI_getcmd(F, b);
+  IRCommand tmp = *acmd;
+  *acmd = *bcmd;
+  *bcmd = tmp;
+}
 
 /*
  * Printing functions for debug
@@ -202,12 +239,14 @@ static void printbinop(lu_byte cmd) {
 }
 
 static void printvalue(IRValue v, int bbstart[]) {
-  flI_log("v%d", bbstart[v.bb] + v.cmd);
+  flI_log("%%%d", bbstart[v.bb] + v.cmd);
 }
 
 static void printcmd(IRFunction *F, IRId bbid, IRId cmdid, int bbstart[]) {
   IRValue v = {bbid, cmdid};
   IRCommand *cmd = flI_getcmd(F, v);
+  if (cmd->cmdtype == IR_STUB)
+    return;
   flI_log("  ");
   if (cmd->type != IR_VOID) {
     printvalue(v, bbstart);
@@ -249,6 +288,14 @@ static void printcmd(IRFunction *F, IRId bbid, IRId cmdid, int bbstart[]) {
       flI_log("ret ");
       printvalue(cmd->args.ret.v, bbstart);
       break;
+    case IR_PHI:
+      flI_log("phi ");
+      printvalue(cmd->args.phi.entry, bbstart);
+      flI_log(" ");
+      printvalue(cmd->args.phi.loop, bbstart);
+      break;
+    case IR_STUB:
+      break;
     default:
       assert(0);
   }
@@ -263,7 +310,7 @@ void flI_print(IRFunction *F) {
     bbstart[bbid] = ncmd;
     ncmd += F->bbs[bbid].ncmds;
   }
-  flI_log("IR DEBUG - F (%p)\n", (void *)F);
+  flI_log("IR DEBUG - function (%p)\n", (void *)F);
   for (bbid = 0; bbid < F->nbbs; ++bbid) {
     IRBBlock *bb = flI_getbb(F, bbid);
     flI_log("bblock %d:\n", bbid);

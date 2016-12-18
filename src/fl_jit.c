@@ -95,6 +95,16 @@ static void initentryblock(JitState *J) {
 }
 
 /*
+ * Create stubs that can be replaced by phi values later.
+ */
+static void createstubs(JitState *J) {
+  int i;
+  int nstubs = J->tr->p->maxstacksize * 2;
+  for (i = 0; i < nstubs; ++i)
+    flI_stub(J->F);
+}
+
+/*
  * Obtains the next instruction position.
  */
 static l_mem getnextpc(l_mem oldpc, Instruction i) {
@@ -127,6 +137,20 @@ static int converttype(int type) {
 }
 
 /*
+ * Converts the binary operation to the equivalente in the IR.
+ */
+static int convertbinop(int op) {
+  switch (op) {
+    case OP_ADD:
+      return IR_ADD;
+    default:
+      assert(0);
+      break;
+  }
+  return 0;
+}
+
+/*
  * Obtains a constant/register in the lua stack.
  */
 static IRValue gettvaluer(JitState *J, int v, int expectedtype) {
@@ -149,13 +173,13 @@ static IRValue gettvaluer(JitState *J, int v, int expectedtype) {
 }
 
 static IRValue gettvaluek(JitState *J, int v, int expectedtype) {
-  (void)expectedtype;
-  // TODO: assert expectedtype == consttype
   TValue *k = J->tr->p->k + v;
   switch (ttype(k)) {
     case LUA_TNUMFLT:
+      assert(expectedtype == IR_LUAFLT);
       return flI_constf(J->F, fltvalue(k));
     case LUA_TNUMINT:
+      assert(expectedtype == IR_LUAINT);
       return flI_consti(J->F, ivalue(k));
     default:
       assert(0);
@@ -172,16 +196,72 @@ static IRValue gettvalue(JitState *J, int v, int expectedtype) {
 }
 
 /*
+ * Add a phi at the begining of the loop basic block and also replace the usage
+ * of the old value in this block. Returns the phi value.
+ */
+static IRValue insertphivalue(JitState *J, int stubpos, IRValue entryval,
+    IRValue loopval) {
+  IRValue phi = flI_phi(J->F, entryval, loopval);
+  IRValue stub = {BBLOCK_LOOP, stubpos};
+  flI_swapvalues(J->F, phi, stub);
+  flI_replacevalue(J->F, BBLOCK_LOOP, entryval, stub);
+  return phi;
+}
+
+/*
+ * Defines the lua register value.
+ */
+static void settvalue(JitState *J, int reg, int type, IRValue value) {
+  IRFunction *F = J->F;
+  IRValue *savedvalue = J->rvalues + reg;
+  IRValue *savedtype = J->rtypes + reg;
+  IRValue irtype = flI_consti(F, type);
+  if (flI_isnullvalue(*savedvalue)) {
+    *savedvalue = value;
+    *savedtype = irtype;
+  } else if (flI_valuegetbb(*savedvalue) == BBLOCK_ENTRY) {
+    /* create a phi value */
+    *savedvalue = insertphivalue(J, reg * 2, *savedvalue, value);
+    *savedtype = insertphivalue(J, reg * 2 + 1, *savedtype, irtype);
+  } else {
+    /* replace the value of the loop block */
+    IRCommand *valuecmd = flI_getcmd(F, *savedvalue);
+    IRCommand *typecmd = flI_getcmd(F, *savedtype);
+    if (valuecmd->cmdtype == IR_PHI) {
+      valuecmd->args.phi.loop = value;
+      typecmd->args.phi.loop = irtype;
+    } else {
+      *savedvalue = value;
+      *savedtype = irtype;
+    }
+  }
+}
+
+/*
+ * Auxiliary macros for obtaining the Lua's tvalues.
+ */
+#define getrkb(J, i, rt) \
+  gettvalue(J, GETARG_B(i), converttype(rt->binoptypes.rb))
+#define getrkc(J, i, rt) \
+  gettvalue(J, GETARG_C(i), converttype(rt->binoptypes.rc))
+
+/*
  * Compiles a single opcode.
  */
 static void compilebytecode(JitState *J, int n) {
+  IRFunction *F = J->F;
   Proto *p = J->tr->p;
   Instruction i = p->code[J->pc];
   RuntimeRec *rt = J->tr->rt + n;
-  switch (GET_OPCODE(i)) {
+  int op = GET_OPCODE(i);
+  switch (op) {
     case OP_ADD: {
-      IRValue rb = gettvalue(J, GETARG_B(i), converttype(rt->binoptypes.rb));
-      (void)rb;
+      IRValue rb = getrkb(J, i, rt);
+      IRValue rc = getrkc(J, i, rt);
+      // TODO conversions
+      int rtype = LUA_TNUMINT;
+      IRValue rvalue = flI_binop(F, convertbinop(op), rb, rc);
+      settvalue(J, GETARG_A(i), rtype, rvalue);
       break;
     }
     case OP_FORLOOP: {
@@ -217,8 +297,11 @@ void flJ_compile(struct lua_State *L, TraceRec *tr) {
   if (tr->completeloop) {
     int i;
     flI_createbb(F);
+    createstubs(J);
     for (i = 0; i < tr->n; ++i)
       compilebytecode(J, i);
+  } else {
+    assert(0);
   }
   flI_print(J->F);
   destroyjitstate(J);

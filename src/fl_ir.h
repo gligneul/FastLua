@@ -86,7 +86,7 @@ enum IRCommandType {
   IR_MUL,
   IR_DIV,
   IR_RET,
-  IR_LOOPPHI,
+  IR_PHI,
   IR_STUB,
 };
 
@@ -98,11 +98,19 @@ typedef struct IRValue {
   IRId cmd;
 } IRValue;
 
+#define flI_valuegetbb(v) ((v).bb)
+#define flI_valuegetcmd(v) ((v).cmd)
+
+/*
+ * Compares two values.
+ */
+#define flI_valueeq(a, b) ((a).bb == (b).bb && (a).cmd == (b).cmd)
+
 /*
  * Null values.
  */
 extern const IRValue IRNullValue;
-#define flI_isnullvalue(v) ((v).bb == IRNullId && (v).cmd == IRNullId)
+#define flI_isnullvalue(v) (flI_valueeq(v, IRNullValue))
 
 /* 
  * Commands
@@ -117,7 +125,7 @@ typedef struct IRCommand {
     struct { IRValue mem, v; } store;
     struct { IRValue l, r; } binop;
     struct { IRValue v; } ret;
-    struct { IRValue entry, loop; } loopphi;
+    struct { IRValue entry, loop; } phi;
   } args;
 } IRCommand;
 
@@ -168,22 +176,26 @@ IRId flI_createbb(IRFunction *F);
  */
 IRValue flI_consti(IRFunction *F, l_mem i);
 IRValue flI_constf(IRFunction *F, lua_Number f);
-IRValue flI_constp(IRFunction *F, void *p);
 IRValue flI_getarg(IRFunction *F, lu_byte type, int n);
 IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem);
 IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
 IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
 IRValue flI_return(IRFunction *F, IRValue v);
-IRValue flI_loopphi(IRFunction *F, lu_byte type);
+IRValue flI_phi(IRFunction *F, IRValue entry, IRValue loop);
 IRValue flI_stub(IRFunction *F);
 
 /*
- * Creates a new command that is a copy of this one.
+ * Replace the usage of a value for another in the bblock.
  */
-IRValue flI_copy(IRFunction *F, IRCommand *cmd);
+void flI_replacevalue(IRFunction *F, IRId bblock, IRValue old, IRValue new);
 
 /*
- * Obtains the field address.
+ * Swaps two values.
+ */
+void flI_swapvalues(IRFunction *F, IRValue a, IRValue b);
+
+/*
+ * Obtains the address of a struct's field.
  */
 #define flI_getfieldptr(F, ptr, strukt, field) \
   (offsetof(strukt, field) == 0 ? ptr : \
