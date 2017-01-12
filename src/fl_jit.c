@@ -196,14 +196,15 @@ static IRValue gettvalue(JitState *J, int v, int expectedtype) {
 }
 
 /*
+ * TODO: explain the stubs
  * Add a phi at the begining of the loop basic block and also replace the usage
  * of the old value in this block. Returns the phi value.
  */
-static IRValue insertphivalue(JitState *J, int stubpos, IRValue entryval,
-    IRValue loopval) {
+static IRValue insertphivalue(JitState *J, int reg, int isvalue,
+    IRValue entryval, IRValue loopval) {
   IRValue phi = flI_phi(J->F, entryval, loopval);
-  IRValue stub = {BBLOCK_LOOP, stubpos};
-  flI_swapvalues(J->F, phi, stub);
+  IRValue stub = flI_value(BBLOCK_LOOP, 2 * reg + isvalue);
+  flI_swapcommands(J->F, phi, stub);
   flI_replacevalue(J->F, BBLOCK_LOOP, entryval, stub);
   return phi;
 }
@@ -221,8 +222,8 @@ static void settvalue(JitState *J, int reg, int type, IRValue value) {
     *savedtype = irtype;
   } else if (flI_valuegetbb(*savedvalue) == BBLOCK_ENTRY) {
     /* create a phi value */
-    *savedvalue = insertphivalue(J, reg * 2, *savedvalue, value);
-    *savedtype = insertphivalue(J, reg * 2 + 1, *savedtype, irtype);
+    *savedvalue = insertphivalue(J, reg, 0, *savedvalue, value);
+    *savedtype = insertphivalue(J, reg, 1, *savedtype, irtype);
   } else {
     /* replace the value of the loop block */
     IRCommand *valuecmd = flI_getcmd(F, *savedvalue);
@@ -258,13 +259,45 @@ static void compilebytecode(JitState *J, int n) {
     case OP_ADD: {
       IRValue rb = getrkb(J, i, rt);
       IRValue rc = getrkc(J, i, rt);
-      // TODO conversions
+      // TODO: conversions
+      // TOPO: rvalue -> resultingvalue
       int rtype = LUA_TNUMINT;
       IRValue rvalue = flI_binop(F, convertbinop(op), rb, rc);
       settvalue(J, GETARG_A(i), rtype, rvalue);
       break;
     }
     case OP_FORLOOP: {
+      // Check if the loop is the expected type
+      // get step
+      // get idx
+      // get limit
+      // if to go back
+      // then (update indices)
+      // else exit loop (update external pc)
+#if 0
+        if (ttisinteger(ra)) {  /* integer loop? */
+          lua_Integer step = ivalue(ra + 2);
+          lua_Integer idx = intop(+, ivalue(ra), step); /* increment index */
+          lua_Integer limit = ivalue(ra + 1);
+          if ((0 < step) ? (idx <= limit) : (limit <= idx)) {
+            ci->u.l.savedpc += GETARG_sBx(i);  /* jump back */
+            chgivalue(ra, idx);  /* update internal index... */
+            setivalue(ra + 3, idx);  /* ...and external index */
+          }
+        }
+        else {  /* floating loop */
+          lua_Number step = fltvalue(ra + 2);
+          lua_Number idx = luai_numadd(L, fltvalue(ra), step); /* inc. index */
+          lua_Number limit = fltvalue(ra + 1);
+          if (luai_numlt(0, step) ? luai_numle(idx, limit)
+                                  : luai_numle(limit, idx)) {
+            ci->u.l.savedpc += GETARG_sBx(i);  /* jump back */
+            chgfltvalue(ra, idx);  /* update internal index... */
+            setfltvalue(ra + 3, idx);  /* ...and external index */
+          }
+        }
+        vmbreak;
+#endif
       break;
     }
     default:

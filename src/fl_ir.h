@@ -24,33 +24,21 @@
 
 /*
  * Intermediate representation used by the fastlua jit.
- * The compilations steps are: lua bytecode -> fastlua ir -> machine code.
  */
 
-#ifndef fl_ir_h
-#define fl_ir_h
+#ifndef fl_flir_h
+#define fl_flir_h
 
 #include <limits.h>
 
 #include "llimits.h"
 
+#include "fl_luacontainer.h"
+
+struct IRBBlock;
+struct IRCommand;
 struct lua_State;
 
-/*
- * Ids (indices) are used in this representation instead of pointers to
- * reduce the structures size.
- */
-typedef unsigned short IRId;
-#define IRNullId USHRT_MAX
-
-/*
- * All small integer values are promoted to word-size (ptr-size) integers.
- */
-typedef l_mem IRInt;
-
-/*
- * Types.
- */
 enum IRType {
   IR_CHAR,
   IR_SHORT,
@@ -61,21 +49,19 @@ enum IRType {
   IR_VOID,
 };
 
-/* Verifies if a type is an integer. */
-#define flI_isintt(t) (t <= IR_INTPTR)
+/* All integer values are promoted to word-size (ptr-size) integers.  */
+typedef l_mem IRInt;
 
-/*
- * Constants.
- */
+/* Constants. */
 typedef union {
   lua_Number f; /* float */
-  l_mem i; /* int */
-  void *p;
-} IRUConstant;
+  IRInt i; /* int/pointers */
+} IRConstant;
 
-/*
- * Commands.
- */
+/* A SSA value is a reference to a command that generates it. */
+typedef struct IRCommand *IRValue;
+
+/* Possible command types. */
 enum IRCommandType {
   IR_CONST,
   IR_GETARG,
@@ -87,131 +73,109 @@ enum IRCommandType {
   IR_DIV,
   IR_RET,
   IR_PHI,
-  IR_STUB,
 };
 
-/*
- * Values are references to it's basic block and command.
- */
-typedef struct IRValue {
-  IRId bb;
-  IRId cmd;
-} IRValue;
+/* TODO comment */
+typedef struct IRPhiNode {
+  IRValue value;
+  IRBBlock bblock;
+  struct IRPhiNode *next;
+} PhiNode;
 
-#define flI_valuegetbb(v) ((v).bb)
-#define flI_valuegetcmd(v) ((v).cmd)
-
-/*
- * Compares two values.
- */
-#define flI_valueeq(a, b) ((a).bb == (b).bb && (a).cmd == (b).cmd)
-
-/*
- * Null values.
- */
-extern const IRValue IRNullValue;
-#define flI_isnullvalue(v) (flI_valueeq(v, IRNullValue))
-
-/* 
- * Commands
- */
 typedef struct IRCommand {
-  lu_byte type; /* value type */
-  lu_byte cmdtype; /* command type */
-  union { /* the command arguments */
-    IRUConstant konst;
+  lu_byte type;             /* value type */
+  lu_byte cmdtype;          /* command type */
+  IRBBlock *bblock;         /* basic block */
+  struct IRCommand *next;   /* next element in the linked list */
+  union {                   /* command arguments */
+    IRConstant konst;
     struct { int n; } getarg;
     struct { IRValue mem; lu_byte type; } load;
     struct { IRValue mem, v; } store;
     struct { IRValue l, r; } binop;
     struct { IRValue v; } ret;
-    struct { IRValue entry, loop; } phi;
+    fllist_decl(IRPhiNode, phi);
   } args;
 } IRCommand;
 
-/*
- * Basic blocks
- */
 typedef struct IRBBlock {
-  IRCommand *cmds; /* commands vector */
-  int ncmds;
-  int sizecmds;
+  fllist_decl(IRCommand, cmds);
+  struct IRBBlock *next;
 } IRBBlock;
 
-/*
- * Functions
- */
+/* Root structure of the module */
 typedef struct IRFunction {
   struct lua_State *L;
-  IRBBlock *bbs; /* basic blocks vector */
-  int nbbs;
-  int sizebbs;
-  IRId currbb; /* current basic block */
+  IRBBlock *currbb;
+  fllist_decl(IRBBlock, bblocks);
 } IRFunction;
 
-/* Given a bblock id, obtains the bblock. */
-#define flI_getbb(F, id) (&F->bbs[id])
-
-/* Given value, obtains the command. */
-#define flI_getcmd(F, value) (&F->bbs[(value).bb].cmds[(value).cmd])
 
 /*
- * Creates/destroy the ir function.
+ * The IRFunction is the main structure of this module.  Most of the routines
+ * expects the function object to be named _irfunc. You should either declare
+ * the function variable with this name or use a macro.  eg.: 
+ * #define _irfunc (mystruct->irfunc)
+ * You can also use the alternative routines that receive the explicit function
+ * as the first parameter.
  */
-IRFunction *flI_createfunc(struct lua_State *L);
-void flI_destroyfunc(IRFunction *F);
 
-/*
- * Creates a basic block, set as the current one and returns it's id.
- */
-IRId flI_createbb(IRFunction *F);
+/* Create/destroy the IR function. */
+IRFunction *flir_create(struct lua_State *L);
+void _flir_destroy(struct IRFunction *F);
+#define flir_destroy() _flir_destroy
 
-/*
- * Sets the bblock as the current block.
- */
-#define flI_setcurrbb(F, bbid) (F->currbb = bbid)
+/* Verify if a type is an integer. */
+#define flir_isintt(t) (t <= IR_INTPTR)
 
-/*
- * Creates a command and return the generated value.
- */
-IRValue flI_consti(IRFunction *F, l_mem i);
-IRValue flI_constf(IRFunction *F, lua_Number f);
-IRValue flI_getarg(IRFunction *F, lu_byte type, int n);
-IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem);
-IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
-IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
-IRValue flI_return(IRFunction *F, IRValue v);
-IRValue flI_phi(IRFunction *F, IRValue entry, IRValue loop);
-IRValue flI_stub(IRFunction *F);
+/* Create a basic block, set as the current one and returns it. */
+IRBBlock *_flir_addbblock(IRFunction *F);
+#define flir_addbblock() _flir_addbblock(_irfunc)
 
-/*
- * Replace the usage of a value for another in the bblock.
- */
-void flI_replacevalue(IRFunction *F, IRId bblock, IRValue old, IRValue new);
+/* Create a command and return the generated value. */
+IRValue _flir_consti(IRFunction *F, IRInt i);
+IRValue _flir_constf(IRFunction *F, lua_Number f);
+IRValue _flir_getarg(IRFunction *F, lu_byte type, int n);
+IRValue _flir_load(IRFunction *F, lu_byte type, IRValue mem);
+IRValue _flir_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
+IRValue _flir_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
+IRValue _flir_return(IRFunction *F, IRValue v);
+IRValue _flir_phi(IRFunction *F, IRType type);
+#define flir_consti(i) _flir_consti(_irfunc, i)
+#define flir_constf(f) _flir_constf(_irfunc, f)
+#define flir_getarg(type, n) _flir_getarg(_irfunc, type, n)
+#define flir_load(type, mem) _flir_load(_irfunc, type, mem)
+#define flir_store(type, mem, val) _flir_store(_irfunc, type, mem, val)
+#define flir_binop(op, l, r) _flir_binop(_irfunc, op, l, r)
+#define flir_return(v) _flir_return(_irfunc, v)
+#define flir_phi(type) _flir_phi(_irfunc, type)
 
-/*
- * Swaps two values.
- */
-void flI_swapvalues(IRFunction *F, IRValue a, IRValue b);
+/* Adds a phi node to the phi command. */
+void _flir_addphinode(IRFunction *F, IRCommand *phi, IRValue value,
+    IRBBlock *bblock);
+#define flir_addphinode(phi, value, bblock) \
+    _flir_addphinode(_irfunc, phi, value, bblock)
 
-/*
- * Obtains the address of a struct's field.
- */
-#define flI_getfieldptr(F, ptr, strukt, field) \
+/* Replace the usage of a value for another in the bblock. */
+void _flir_replacevalue(IRFunction *F, IRBBlock *b, IRValue old, IRValue new);
+#define flir_replacevalue(b, old, new) _flir_replacevalue(_irfunc, b, old, new)
+
+/* Obtains the address of a struct's field.  */
+#define _flir_getfieldptr(F, ptr, strukt, field) \
   (offsetof(strukt, field) == 0 ? ptr : \
-    flI_binop(F, IR_ADD, ptr, flI_consti(F, offsetof(strukt, field))))
+    flir_binop(F, IR_ADD, ptr, flir_consti(F, offsetof(strukt, field))))
+#define flir_getfieldptr(ptr, strukt, field) \
+    _flir_getfieldptr(_irfunc, ptr, strukt, field)
 
-/*
- * Loads the field value.
- */
-#define flI_loadfield(F, type, ptr, strukt, field) \
-  (flI_load(F, type, flI_getfieldptr(F, ptr, strukt, field)))
+/* Loads the field value. */
+#define _flir_loadfield(F, type, ptr, strukt, field) \
+  (flir_load(F, type, flir_getfieldptr(F, ptr, strukt, field)))
+#define flir_loadfield(type, ptr, strukt, field) \
+    _flir_loadfield(_irfunc, type, ptr, strukt, field)
  
-/*
- * DEBUG: Prints the function
- */
-#define flI_log(...) fprintf(stderr, __VA_ARGS__)
-void flI_print(IRFunction *F);
+/* DEBUG: Prints the function */
+void _flir_print(IRFunction *F);
+#define flir_print(_irfunc)
 
 #endif
 

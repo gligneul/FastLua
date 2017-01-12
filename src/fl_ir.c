@@ -31,134 +31,125 @@
 
 #include "fl_ir.h"
 
-const IRValue IRNullValue = {IRNullId, IRNullId};
-
-/*
- * Creates a command and returns the value by reference.
- */
-static IRCommand *createvalue(IRFunction *F, lu_byte type, lu_byte cmdtype,
-    IRValue *v) {
-  IRBBlock *bb = flI_getbb(F, F->currbb);
-  IRId id = bb->ncmds++;
-  IRCommand *cmd = NULL;
-  luaM_growvector(F->L, bb->cmds, id, bb->sizecmds, IRCommand, MAX_INT, "");
-  v->bb = F->currbb;
-  v->cmd = id;
-  cmd = flI_getcmd(F, *v);
-  cmd->type = type;
-  cmd->cmdtype = cmdtype;
-  return cmd;
-}
-
-IRFunction *flI_createfunc(struct lua_State *L) {
+IRFunction *flir_create(struct lua_State *L) {
   IRFunction *F = luaM_new(L, IRFunction);
   F->L = L;
-  F->bbs = NULL;
-  F->nbbs = 0;
-  F->sizebbs = 0;
-  F->currbb = 0;
+  F->currbb = NULL;
+  fllist_init(IRBBlock, F->bblocks);
   return F;
 }
 
-void flI_destroyfunc(IRFunction *F) {
-  IRBBlock *bb;
-  for (bb = F->bbs; bb != F->bbs + F->nbbs; ++bb)
-    luaM_freearray(F->L, bb->cmds, bb->sizecmds);
-  luaM_freearray(F->L, F->bbs, F->sizebbs);
+void _flir_destroy(IRFunction *F) {
+  IRBBlock *b = F->bblocks.first;
+  while (b != NULL) {
+    IRCommand *c = b->cmds.first;
+    while (c != NULL) {
+      if (c->cmdtype == IR_PHI) {
+        IRPhiNode *p = c->args.phi.first;
+        while (p != NULL)
+          fllist_destroy(IRPhiNode, F->L, p);
+      }
+      fllist_destroy(IRCommand, F->L, c);
+    }
+    fllist_destroy(IRBBlock, F->L, b);
+  }
   luaM_free(F->L, F);
 }
 
-IRId flI_createbb(IRFunction *F) {
-  IRBBlock *bb = NULL;
-  IRId id = F->nbbs++;
-  luaM_growvector(F->L, F->bbs, id, F->sizebbs, IRBBlock, MAX_INT, "");
-  bb = &F->bbs[id];
-  bb->cmds = NULL;
-  bb->ncmds = 0;
-  bb->sizecmds = 0;
-  flI_setcurrbb(F, id);
-  return id;
+IRBBlock *_flir_addbblock(IRFunction *F) {
+  IRBBlock *b;
+  fllist_insert(IRBBlock, F->L, F->bblocks, b);
+  fllist_init(IRCommand, b->cmds);
+  F->currbb = b;
+  return b;
 }
 
-IRValue flI_consti(IRFunction *F, IRInt k) {
-  IRValue v;
-  IRCommand *cmd = createvalue(F, IR_INTPTR, IR_CONST, &v);
-  cmd->args.konst.i = k;
-  return v;
+/* Create a command in the current basic block */
+IRCommand *createcmd(IRFunction *F, lu_byte type, lu_byte cmdtype) {
+  IRBBlock *b = F->currbb;
+  IRCommand *c;
+  fllist_insert(IRValue, F->L, b->cmds, c);
+  c->type = type;
+  c->cmdtype = cmdtype;
+  c->bblock = b;
+  return c;
 }
 
-IRValue flI_constf(IRFunction *F, lua_Number k) {
-  IRValue v;
-  IRCommand *cmd = createvalue(F, IR_LUAFLT, IR_CONST, &v);
-  cmd->args.konst.f = k;
-  return v;
+IRValue _flir_consti(IRFunction *F, l_mem i) {
+  IRCommand *c = createcmd(F, IR_INTPTR, IR_CONST);
+  c->args.konst.i = i;
+  return c;
 }
 
-IRValue flI_getarg(IRFunction *F, lu_byte type, int n) {
-  IRValue v;
-  IRCommand *cmd = createvalue(F, type, IR_GETARG, &v);
-  cmd->args.getarg.n = n;
-  return v;
+IRValue _flir_constf(IRFunction *F, lua_Number f) {
+  IRCommand *c = createcmd(F, IR_LUAFLT, IR_CONST);
+  c->args.konst.f = f;
+  return c;
 }
 
-IRValue flI_load(IRFunction *F, lu_byte type, IRValue mem) {
-  IRValue v;
+IRValue _flir_getarg(IRFunction *F, lu_byte type, int n) {
+  IRCommand *c = createcmd(F, type, IR_GETARG);
+  c->args.getarg.n = n;
+  return c;
+}
+
+IRValue _flir_load(IRFunction *F, lu_byte type, IRValue mem) {
   /* promote integers to intptr */
   lu_byte finaltype = flI_isintt(type) ? IR_INTPTR : type;
-  IRCommand *cmd = createvalue(F, finaltype, IR_LOAD, &v);
-  cmd->args.load.mem = mem;
-  cmd->args.load.type = type;
-  return v;
+  IRCommand *c = createcmd(F, finaltype, IR_LOAD);
+  c->args.load.mem = mem;
+  c->args.load.type = type;
+  return c;
 }
 
-IRValue flI_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val) {
-  IRValue v;
-  IRCommand *cmd = createvalue(F, type, IR_STORE, &v);
-  cmd->args.store.mem = mem;
-  cmd->args.store.v = val;
-  assert((flI_getcmd(F, val)->type == type) ||
-         (flI_getcmd(F, val)->type == IR_INTPTR && flI_isintt(type)));
-  return v;
+IRValue _flir_store(IRFunction *F, lu_byte type, IRValue mem, IRValue v) {
+  IRCommand *c = createcmd(F, type, IR_STORE);
+  c->args.store.mem = mem;
+  c->args.store.v = v;
+  assert(v->type == type || (v->type == IR_INTPTR && flir_isintt(type)));
+  return c;
 }
 
-IRValue flI_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r) {
-  IRCommand *lcmd = flI_getcmd(F, l);
-  IRValue v;
-  IRCommand *cmd = createvalue(F, lcmd->type, op, &v);
-  cmd->args.binop.l = l;
-  cmd->args.binop.r = r;
-  assert(lcmd->type == flI_getcmd(F, r)->type);
-  return v;
+IRValue _flir_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r) {
+  IRCommand *c = createcmd(F, l->type, op);
+  c->args.binop.l = l;
+  c->args.binop.r = r;
+  assert(l->type == r->type);
+  return c;
 }
 
-IRValue flI_return(IRFunction *F, IRValue val) {
-  IRValue v;
-  IRCommand *cmd = createvalue(F, IR_VOID, IR_RET, &v);
-  cmd->args.ret.v = val;
-  return v;
+IRValue _flir_return(IRFunction *F, IRValue v) {
+  IRCommand *c = createcmd(F, IR_VOID, IR_RET);
+  c->args.ret.v = v;
+  return c;
 }
 
-IRValue flI_phi(IRFunction *F, IRValue entry, IRValue loop) {
-  IRCommand *entrycmd = flI_getcmd(F, entry);
-  IRValue v;
-  IRCommand *cmd = createvalue(F, entrycmd->type, IR_PHI, &v);
-  cmd->args.phi.entry = entry;
-  cmd->args.phi.loop = loop;
-  assert(entrycmd->type == flI_getcmd(F, loop)->type);
-  return v;
+IRValue _flir_phi(IRFunction *F, IRType type) {
+  IRCommand *c = createcmd(F, type, IR_PHI);
+  fllist_init(IRPhiNode, c->args.phi);
+  return c;
 }
 
-IRValue flI_stub(IRFunction *F) {
-  IRValue v;
-  createvalue(F, IR_VOID, IR_STUB, &v);
-  return v;
+void _flir_addphinode(IRFunction *F, IRCommand *phi, IRValue value,
+    IRBBlock *bblock) {
+  IRPhiNode *p;
+  assert(phi->cmdtype == IR_PHI);
+  assert(phi->type == value->type);
+  fllist_insert(IRPhiNode, F->L, phi->args.phi, p);
+  p->value = value;
+  p->bblock = bblock;
 }
 
-/*
- * Replace helper.
- */
+/* Replace helper */
 #define replacehelper(cell, old, new) \
-  do { if (flI_valueeq(cell, old)) cell = new; } while (0)
+  do { if (cell == old) cell = new; } while (0)
+
+void _flir_
+
+void _flir_replacevalue(IRFunction *F, IRBBlock *b, IRValue old, IRValue new) {
+  
+}
+
 
 void flI_replacevalue(IRFunction *F, IRId bbid, IRValue old, IRValue new) {
   IRBBlock *bb = flI_getbb(F, bbid);
