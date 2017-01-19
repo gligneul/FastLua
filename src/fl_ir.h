@@ -29,12 +29,12 @@
  * Latter, the IR is optimized and compiled into machine code.
  *
  * The IRFunction is the main structure of this module. Most of the routines
- * expects the function object to be named _irfunc. The routine ir_addbblock(),
- * for example, receive the _irfunc as a implicit parameter.
- * You should either declare the function variable with this name or use a
+ * expects the IRFunction object to be named _irfunc. The routine
+ * ir_addbblock(), for example, receive the _irfunc as a implicit parameter.
+ * You should either declare the IRFunction object with this name or use a
  * macro. Example: #define _irfunc (mystruct->irfunc).
- * You can also use the alternative routines that receive the explicit function
- * as the first parameter. Example: _ir_addbblock(my_iffunc).
+ * You can also use the alternative routines that receive the explicit
+ * IRFunction object as the first parameter. Example: _ir_addbblock(my_iffunc).
  */
 
 #ifndef fl_ir_h
