@@ -23,22 +23,53 @@
  */
 
 /*
- * Intermediate representation used by the fastlua jit.
+ * This is simple SSA intermetiate representation.
+ *
+ * The fastlua jit transforms the lua bytecode into this representation.
+ * Latter, the IR is optimized and compiled into machine code.
+ *
+ * The IRFunction is the main structure of this module. Most of the routines
+ * expects the function object to be named _irfunc. The routine ir_addbblock(),
+ * for example, receive the _irfunc as a implicit parameter.
+ * You should either declare the function variable with this name or use a
+ * macro. Example: #define _irfunc (mystruct->irfunc).
+ * You can also use the alternative routines that receive the explicit function
+ * as the first parameter. Example: _ir_addbblock(my_iffunc).
  */
 
-#ifndef fl_flir_h
-#define fl_flir_h
+#ifndef fl_ir_h
+#define fl_ir_h
 
 #include <limits.h>
 
 #include "llimits.h"
 
-#include "fl_luacontainer.h"
+#include "fl_container.h"
 
-struct IRBBlock;
-struct IRCommand;
+/* Foward declarations */
 struct lua_State;
 
+/* Types defined in this module */
+typedef struct IRFunction IRFunction;
+typedef struct IRBBlock IRBBlock;
+typedef struct IRCommand IRCommand;
+typedef struct IRPhiNode IRPhiNode;
+
+/* A SSA value is a reference to the command that generates it. */
+typedef struct IRCommand *IRValue;
+
+/* All integer values are promoted to word-size (ptr-size) integers. */
+typedef l_mem IRInt;
+
+/* Containers */
+TSCC_DECL_VECTOR_WA(IRBBlockVector, ir_bbvec_, struct IRBBlock *,
+    struct lua_State *)
+TSCC_DECL_VECTOR_WA(IRCommandVector, ir_cmdvec_, struct IRCommand *,
+    struct lua_State *)
+TSCC_DECL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, struct IRPhiNode *,
+    struct lua_State *)
+
+/* Value types */
 enum IRType {
   IR_CHAR,
   IR_SHORT,
@@ -49,19 +80,7 @@ enum IRType {
   IR_VOID,
 };
 
-/* All integer values are promoted to word-size (ptr-size) integers.  */
-typedef l_mem IRInt;
-
-/* Constants. */
-typedef union {
-  lua_Number f; /* float */
-  IRInt i; /* int/pointers */
-} IRConstant;
-
-/* A SSA value is a reference to a command that generates it. */
-typedef struct IRCommand *IRValue;
-
-/* Possible command types. */
+/* Command types */
 enum IRCommandType {
   IR_CONST,
   IR_GETARG,
@@ -75,107 +94,106 @@ enum IRCommandType {
   IR_PHI,
 };
 
-/* TODO comment */
-typedef struct IRPhiNode {
-  IRValue value;
-  IRBBlock bblock;
-  struct IRPhiNode *next;
-} PhiNode;
+/* union IRConstant
+ * Constants are either integers/pointers or float numbers. */
+union IRConstant {
+  lua_Number f;     /* float */
+  IRInt i;          /* int/pointers */
+};
 
-typedef struct IRCommand {
+/* IRFunction
+ * Root structure of the module. */
+struct IRFunction {
+  struct lua_State *L;      /* lua state */
+  IRBBlock *currbb;         /* current basic block */
+  IRBBlockVector *bblocks;  /* list of basic blocks */
+};
+
+/* IRBBlock
+ * Basicaly a list of commands. */
+struct IRBBlock {
+  IRCommandVector *cmds;
+};
+
+/* IRCommand */
+struct IRCommand {
   lu_byte type;             /* value type */
   lu_byte cmdtype;          /* command type */
   IRBBlock *bblock;         /* basic block */
-  struct IRCommand *next;   /* next element in the linked list */
   union {                   /* command arguments */
-    IRConstant konst;
+    union IRConstant konst;
     struct { int n; } getarg;
     struct { IRValue mem; lu_byte type; } load;
     struct { IRValue mem, v; } store;
     struct { IRValue l, r; } binop;
     struct { IRValue v; } ret;
-    fllist_decl(IRPhiNode, phi);
+    IRPhiNodeVector *phi;
   } args;
-} IRCommand;
+};
 
-typedef struct IRBBlock {
-  fllist_decl(IRCommand, cmds);
-  struct IRBBlock *next;
-} IRBBlock;
-
-/* Root structure of the module */
-typedef struct IRFunction {
-  struct lua_State *L;
-  IRBBlock *currbb;
-  fllist_decl(IRBBlock, bblocks);
-} IRFunction;
-
-
-/*
- * The IRFunction is the main structure of this module.  Most of the routines
- * expects the function object to be named _irfunc. You should either declare
- * the function variable with this name or use a macro.  eg.: 
- * #define _irfunc (mystruct->irfunc)
- * You can also use the alternative routines that receive the explicit function
- * as the first parameter.
- */
+/* PhiNode
+ * Map a basic block to the corresponding SSA value. */
+struct IRPhiNode {
+  IRValue value;
+  IRBBlock *bblock;
+};
 
 /* Create/destroy the IR function. */
-IRFunction *flir_create(struct lua_State *L);
-void _flir_destroy(struct IRFunction *F);
-#define flir_destroy() _flir_destroy
+IRFunction *ir_create(struct lua_State *L);
+void _ir_destroy(struct IRFunction *F);
+#define ir_destroy() _ir_destroy
 
 /* Verify if a type is an integer. */
-#define flir_isintt(t) (t <= IR_INTPTR)
+#define ir_isintt(t) (t <= IR_INTPTR)
 
 /* Create a basic block, set as the current one and returns it. */
-IRBBlock *_flir_addbblock(IRFunction *F);
-#define flir_addbblock() _flir_addbblock(_irfunc)
+IRBBlock *_ir_addbblock(IRFunction *F);
+#define ir_addbblock() _ir_addbblock(_irfunc)
 
 /* Create a command and return the generated value. */
-IRValue _flir_consti(IRFunction *F, IRInt i);
-IRValue _flir_constf(IRFunction *F, lua_Number f);
-IRValue _flir_getarg(IRFunction *F, lu_byte type, int n);
-IRValue _flir_load(IRFunction *F, lu_byte type, IRValue mem);
-IRValue _flir_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
-IRValue _flir_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
-IRValue _flir_return(IRFunction *F, IRValue v);
-IRValue _flir_phi(IRFunction *F, IRType type);
-#define flir_consti(i) _flir_consti(_irfunc, i)
-#define flir_constf(f) _flir_constf(_irfunc, f)
-#define flir_getarg(type, n) _flir_getarg(_irfunc, type, n)
-#define flir_load(type, mem) _flir_load(_irfunc, type, mem)
-#define flir_store(type, mem, val) _flir_store(_irfunc, type, mem, val)
-#define flir_binop(op, l, r) _flir_binop(_irfunc, op, l, r)
-#define flir_return(v) _flir_return(_irfunc, v)
-#define flir_phi(type) _flir_phi(_irfunc, type)
+IRValue _ir_consti(IRFunction *F, IRInt i);
+IRValue _ir_constf(IRFunction *F, lua_Number f);
+IRValue _ir_getarg(IRFunction *F, lu_byte type, int n);
+IRValue _ir_load(IRFunction *F, lu_byte type, IRValue mem);
+IRValue _ir_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
+IRValue _ir_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
+IRValue _ir_return(IRFunction *F, IRValue v);
+IRValue _ir_phi(IRFunction *F, IRType type);
+#define ir_consti(i) _ir_consti(_irfunc, i)
+#define ir_constf(f) _ir_constf(_irfunc, f)
+#define ir_getarg(type, n) _ir_getarg(_irfunc, type, n)
+#define ir_load(type, mem) _ir_load(_irfunc, type, mem)
+#define ir_store(type, mem, val) _ir_store(_irfunc, type, mem, val)
+#define ir_binop(op, l, r) _ir_binop(_irfunc, op, l, r)
+#define ir_return(v) _ir_return(_irfunc, v)
+#define ir_phi(type) _ir_phi(_irfunc, type)
 
 /* Adds a phi node to the phi command. */
-void _flir_addphinode(IRFunction *F, IRCommand *phi, IRValue value,
+void _ir_addphinode(IRFunction *F, IRCommand *phi, IRValue value,
     IRBBlock *bblock);
-#define flir_addphinode(phi, value, bblock) \
-    _flir_addphinode(_irfunc, phi, value, bblock)
+#define ir_addphinode(phi, value, bblock) \
+    _ir_addphinode(_irfunc, phi, value, bblock)
 
 /* Replace the usage of a value for another in the bblock. */
-void _flir_replacevalue(IRFunction *F, IRBBlock *b, IRValue old, IRValue new);
-#define flir_replacevalue(b, old, new) _flir_replacevalue(_irfunc, b, old, new)
+void _ir_replacevalue(IRFunction *F, IRBBlock *b, IRValue old, IRValue new);
+#define ir_replacevalue(b, old, new) _ir_replacevalue(_irfunc, b, old, new)
 
 /* Obtains the address of a struct's field.  */
-#define _flir_getfieldptr(F, ptr, strukt, field) \
+#define _ir_getfieldptr(F, ptr, strukt, field) \
   (offsetof(strukt, field) == 0 ? ptr : \
-    flir_binop(F, IR_ADD, ptr, flir_consti(F, offsetof(strukt, field))))
-#define flir_getfieldptr(ptr, strukt, field) \
-    _flir_getfieldptr(_irfunc, ptr, strukt, field)
+    ir_binop(F, IR_ADD, ptr, ir_consti(F, offsetof(strukt, field))))
+#define ir_getfieldptr(ptr, strukt, field) \
+    _ir_getfieldptr(_irfunc, ptr, strukt, field)
 
 /* Loads the field value. */
-#define _flir_loadfield(F, type, ptr, strukt, field) \
-  (flir_load(F, type, flir_getfieldptr(F, ptr, strukt, field)))
-#define flir_loadfield(type, ptr, strukt, field) \
-    _flir_loadfield(_irfunc, type, ptr, strukt, field)
+#define _ir_loadfield(F, type, ptr, strukt, field) \
+  (ir_load(F, type, ir_getfieldptr(F, ptr, strukt, field)))
+#define ir_loadfield(type, ptr, strukt, field) \
+    _ir_loadfield(_irfunc, type, ptr, strukt, field)
  
 /* DEBUG: Prints the function */
-void _flir_print(IRFunction *F);
-#define flir_print(_irfunc)
+void _ir_print(IRFunction *F);
+#define ir_print(_irfunc)
 
 #endif
 
