@@ -63,7 +63,7 @@ static JitState *createjitstate(lua_State *L, TraceRec *tr) {
   JitState *J = luaM_new(L, JitState);
   J->L = L;
   J->tr = tr;
-  J->F = flI_createfunc(L);
+  J->F = ir_createfunc(L);
   J->lstate = IRNullValue;
   J->ci = IRNullValue;
   J->base = IRNullValue;
@@ -76,7 +76,7 @@ static JitState *createjitstate(lua_State *L, TraceRec *tr) {
 }
 
 static void destroyjitstate(JitState *J) {
-  flI_destroyfunc(J->F);
+  ir_destroyfunc(J->F);
   luaM_freearray(J->L, J->rvalues, J->tr->p->maxstacksize);
   luaM_freearray(J->L, J->rtypes, J->tr->p->maxstacksize);
   luaM_free(J->L, J);
@@ -88,10 +88,10 @@ static void destroyjitstate(JitState *J) {
  */
 static void initentryblock(JitState *J) {
   IRFunction *F = J->F;
-  flI_createbb(F);
-  J->lstate = flI_getarg(F, IR_INTPTR, 0);
-  J->ci = flI_getarg(F, IR_INTPTR, 1);
-  J->base = flI_getarg(F, IR_INTPTR, 2);
+  ir_createbb(F);
+  J->lstate = ir_getarg(F, IR_INTPTR, 0);
+  J->ci = ir_getarg(F, IR_INTPTR, 1);
+  J->base = ir_getarg(F, IR_INTPTR, 2);
 }
 
 /*
@@ -101,7 +101,7 @@ static void createstubs(JitState *J) {
   int i;
   int nstubs = J->tr->p->maxstacksize * 2;
   for (i = 0; i < nstubs; ++i)
-    flI_stub(J->F);
+    ir_stub(J->F);
 }
 
 /*
@@ -157,15 +157,15 @@ static IRValue gettvaluer(JitState *J, int v, int expectedtype) {
   IRFunction *F = J->F;
   IRValue *savedvalue = J->rvalues + v;
   IRValue *savedtype = J->rtypes + v;
-  if (flI_isnullvalue(*savedvalue)) {
+  if (ir_isnullvalue(*savedvalue)) {
     IRValue offset, addr;
-    flI_setcurrbb(F, BBLOCK_ENTRY);
-    offset = flI_consti(F, sizeof(TValue) * v);
-    addr = flI_binop(F, IR_ADD, J->base, offset);
-    *savedvalue = flI_loadfield(F, expectedtype, addr, TValue, value_);
+    ir_setcurrbb(F, BBLOCK_ENTRY);
+    offset = ir_consti(F, sizeof(TValue) * v);
+    addr = ir_binop(F, IR_ADD, J->base, offset);
+    *savedvalue = ir_loadfield(F, expectedtype, addr, TValue, value_);
     // TODO: verify if the loadedtype is correct
-    *savedtype = flI_loadfield(F, IR_INT, addr, TValue, tt_);
-    flI_setcurrbb(F, BBLOCK_LOOP);
+    *savedtype = ir_loadfield(F, IR_INT, addr, TValue, tt_);
+    ir_setcurrbb(F, BBLOCK_LOOP);
   } else {
     // TODO: verify if the loadedtype is correct
   }
@@ -177,10 +177,10 @@ static IRValue gettvaluek(JitState *J, int v, int expectedtype) {
   switch (ttype(k)) {
     case LUA_TNUMFLT:
       assert(expectedtype == IR_LUAFLT);
-      return flI_constf(J->F, fltvalue(k));
+      return ir_constf(J->F, fltvalue(k));
     case LUA_TNUMINT:
       assert(expectedtype == IR_LUAINT);
-      return flI_consti(J->F, ivalue(k));
+      return ir_consti(J->F, ivalue(k));
     default:
       assert(0);
       break;
@@ -202,10 +202,10 @@ static IRValue gettvalue(JitState *J, int v, int expectedtype) {
  */
 static IRValue insertphivalue(JitState *J, int reg, int isvalue,
     IRValue entryval, IRValue loopval) {
-  IRValue phi = flI_phi(J->F, entryval, loopval);
-  IRValue stub = flI_value(BBLOCK_LOOP, 2 * reg + isvalue);
-  flI_swapcommands(J->F, phi, stub);
-  flI_replacevalue(J->F, BBLOCK_LOOP, entryval, stub);
+  IRValue phi = ir_phi(J->F, entryval, loopval);
+  IRValue stub = ir_value(BBLOCK_LOOP, 2 * reg + isvalue);
+  ir_swapcommands(J->F, phi, stub);
+  ir_replacevalue(J->F, BBLOCK_LOOP, entryval, stub);
   return phi;
 }
 
@@ -216,18 +216,18 @@ static void settvalue(JitState *J, int reg, int type, IRValue value) {
   IRFunction *F = J->F;
   IRValue *savedvalue = J->rvalues + reg;
   IRValue *savedtype = J->rtypes + reg;
-  IRValue irtype = flI_consti(F, type);
-  if (flI_isnullvalue(*savedvalue)) {
+  IRValue irtype = ir_consti(F, type);
+  if (ir_isnullvalue(*savedvalue)) {
     *savedvalue = value;
     *savedtype = irtype;
-  } else if (flI_valuegetbb(*savedvalue) == BBLOCK_ENTRY) {
+  } else if (ir_valuegetbb(*savedvalue) == BBLOCK_ENTRY) {
     /* create a phi value */
     *savedvalue = insertphivalue(J, reg, 0, *savedvalue, value);
     *savedtype = insertphivalue(J, reg, 1, *savedtype, irtype);
   } else {
     /* replace the value of the loop block */
-    IRCommand *valuecmd = flI_getcmd(F, *savedvalue);
-    IRCommand *typecmd = flI_getcmd(F, *savedtype);
+    IRCommand *valuecmd = ir_getcmd(F, *savedvalue);
+    IRCommand *typecmd = ir_getcmd(F, *savedtype);
     if (valuecmd->cmdtype == IR_PHI) {
       valuecmd->args.phi.loop = value;
       typecmd->args.phi.loop = irtype;
@@ -262,7 +262,7 @@ static void compilebytecode(JitState *J, int n) {
       // TODO: conversions
       // TOPO: rvalue -> resultingvalue
       int rtype = LUA_TNUMINT;
-      IRValue rvalue = flI_binop(F, convertbinop(op), rb, rc);
+      IRValue rvalue = ir_binop(F, convertbinop(op), rb, rc);
       settvalue(J, GETARG_A(i), rtype, rvalue);
       break;
     }
@@ -329,14 +329,14 @@ void flJ_compile(struct lua_State *L, TraceRec *tr) {
   initentryblock(J);
   if (tr->completeloop) {
     int i;
-    flI_createbb(F);
+    ir_createbb(F);
     createstubs(J);
     for (i = 0; i < tr->n; ++i)
       compilebytecode(J, i);
   } else {
     assert(0);
   }
-  flI_print(J->F);
+  ir_print(J->F);
   destroyjitstate(J);
 }
 

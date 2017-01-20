@@ -62,11 +62,14 @@ typedef struct IRCommand *IRValue;
 typedef l_mem IRInt;
 
 /* Containers */
-TSCC_DECL_VECTOR_WA(IRBBlockVector, ir_bbvec_, struct IRBBlock *,
+TSCC_DECL_VECTOR_WA(IRBBlockVector, ir_bbvec_, IRBBlock *, struct lua_State *)
+TSCC_DECL_VECTOR_WA(IRCommandVector, ir_cmdvec_, IRCommand *,
     struct lua_State *)
-TSCC_DECL_VECTOR_WA(IRCommandVector, ir_cmdvec_, struct IRCommand *,
+TSCC_DECL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, IRPhiNode *,
     struct lua_State *)
-TSCC_DECL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, struct IRPhiNode *,
+TSCC_DECL_HASHTABLE_WA(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
+    struct lua_State *)
+TSCC_DECL_HASHTABLE_WA(IRCommandTable, ir_cmdtab_, IRCommand *, int,
     struct lua_State *)
 
 /* Value types */
@@ -117,13 +120,13 @@ struct IRBBlock {
 
 /* IRCommand */
 struct IRCommand {
-  lu_byte type;             /* value type */
-  lu_byte cmdtype;          /* command type */
-  IRBBlock *bblock;         /* basic block */
-  union {                   /* command arguments */
+  enum IRType type;             /* value type */
+  enum IRCommandType cmdtype;   /* command type */
+  IRBBlock *bblock;             /* basic block */
+  union {                       /* command arguments */
     union IRConstant konst;
     struct { int n; } getarg;
-    struct { IRValue mem; lu_byte type; } load;
+    struct { IRValue mem; enum IRType type; } load;
     struct { IRValue mem, v; } store;
     struct { IRValue l, r; } binop;
     struct { IRValue v; } ret;
@@ -140,8 +143,8 @@ struct IRPhiNode {
 
 /* Create/destroy the IR function. */
 IRFunction *ir_create(struct lua_State *L);
-void _ir_destroy(struct IRFunction *F);
-#define ir_destroy() _ir_destroy
+void _ir_destroy(IRFunction *F);
+#define ir_destroy() _ir_destroy(_irfunc)
 
 /* Verify if a type is an integer. */
 #define ir_isintt(t) (t <= IR_INTPTR)
@@ -153,12 +156,12 @@ IRBBlock *_ir_addbblock(IRFunction *F);
 /* Create a command and return the generated value. */
 IRValue _ir_consti(IRFunction *F, IRInt i);
 IRValue _ir_constf(IRFunction *F, lua_Number f);
-IRValue _ir_getarg(IRFunction *F, lu_byte type, int n);
-IRValue _ir_load(IRFunction *F, lu_byte type, IRValue mem);
-IRValue _ir_store(IRFunction *F, lu_byte type, IRValue mem, IRValue val);
-IRValue _ir_binop(IRFunction *F, lu_byte op, IRValue l, IRValue r);
+IRValue _ir_getarg(IRFunction *F, enum IRType type, int n);
+IRValue _ir_load(IRFunction *F, enum IRType type, IRValue mem);
+IRValue _ir_store(IRFunction *F, enum IRType type, IRValue mem, IRValue val);
+IRValue _ir_binop(IRFunction *F, enum IRCommandType op, IRValue l, IRValue r);
 IRValue _ir_return(IRFunction *F, IRValue v);
-IRValue _ir_phi(IRFunction *F, IRType type);
+IRValue _ir_phi(IRFunction *F, enum IRType type);
 #define ir_consti(i) _ir_consti(_irfunc, i)
 #define ir_constf(f) _ir_constf(_irfunc, f)
 #define ir_getarg(type, n) _ir_getarg(_irfunc, type, n)

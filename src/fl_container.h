@@ -127,8 +127,8 @@ static __inline int tscc_str_compare(const char *a, const char *b) {
 
 #define TSCC_DECL_VECTOR_WA(typename, funcprefix, T, AllocatorType) \
 typedef struct typename typename; \
-typename *funcprefix##create(size_t buffsize); \
-typename *funcprefix##createwa(size_t buffsize, AllocatorType allocator); \
+typename *funcprefix##create(void); \
+typename *funcprefix##createwa(AllocatorType allocator); \
 void funcprefix##destroy(typename *v); \
 int funcprefix##empty(typename *v); \
 size_t funcprefix##size(typename *v); \
@@ -164,17 +164,17 @@ static void funcprefix##growvector(typename *v) \
         else if (v->size + 1 > v->capacity) \
             funcprefix##resizevector(v, v->capacity * 2); \
     } \
-typename *funcprefix##create(size_t buffsize) \
+typename *funcprefix##create(void) \
 { \
-        return funcprefix##createwa(buffsize, NULL); \
+        return funcprefix##createwa(NULL); \
     } \
-typename *funcprefix##createwa(size_t buffsize, AllocatorType allocator) \
+typename *funcprefix##createwa(AllocatorType allocator) \
 { \
         typename *v = realloc_function(allocator, NULL, 0, sizeof(typename)); \
         v->allocator = allocator; \
         v->buffer = NULL; \
         v->size = v->capacity = 0; \
-        funcprefix##resizevector(v, buffsize); \
+        funcprefix##resizevector(v, 8); \
         return v; \
     } \
 void funcprefix##destroy(typename *v) \
