@@ -44,7 +44,7 @@
 
 #include "llimits.h"
 
-#include "fl_container.h"
+#include "fl_containers.h"
 
 /* Foward declarations */
 struct lua_State;
@@ -143,8 +143,7 @@ struct IRPhiNode {
 
 /* Create/destroy the IR function. */
 IRFunction *ir_create(struct lua_State *L);
-void _ir_destroy(IRFunction *F);
-#define ir_destroy() _ir_destroy(_irfunc)
+void ir_destroy(IRFunction *F);
 
 /* Verify if a type is an integer. */
 #define ir_isintt(t) (t <= IR_INTPTR)
@@ -152,6 +151,13 @@ void _ir_destroy(IRFunction *F);
 /* Create a basic block, set as the current one and returns it. */
 IRBBlock *_ir_addbblock(IRFunction *F);
 #define ir_addbblock() _ir_addbblock(_irfunc)
+
+/* Obtain the basic block in the position. */
+IRBBlock *_ir_getbblock(IRFunction *F, size_t pos);
+#define ir_getbblock(pos) (_ir_getbblock(_irfunc, pos))
+
+/* Access the current basic block. */
+#define ir_currbblock() (_irfunc->currbb)
 
 /* Create a command and return the generated value. */
 IRValue _ir_consti(IRFunction *F, IRInt i);
@@ -177,6 +183,10 @@ void _ir_addphinode(IRFunction *F, IRCommand *phi, IRValue value,
 #define ir_addphinode(phi, value, bblock) \
     _ir_addphinode(_irfunc, phi, value, bblock)
 
+/* Move the command to the position in the same basic block. */
+void _ir_move(IRFunction *F, IRBBlock *bb, size_t from, size_t to);
+#define ir_move(bb, from, to) _ir_move(_irfunc, bb, from, to)
+
 /* Replace the usage of a value for another in the bblock. */
 void _ir_replacevalue(IRFunction *F, IRBBlock *b, IRValue old, IRValue new);
 #define ir_replacevalue(b, old, new) _ir_replacevalue(_irfunc, b, old, new)
@@ -184,19 +194,19 @@ void _ir_replacevalue(IRFunction *F, IRBBlock *b, IRValue old, IRValue new);
 /* Obtains the address of a struct's field.  */
 #define _ir_getfieldptr(F, ptr, strukt, field) \
   (offsetof(strukt, field) == 0 ? ptr : \
-    ir_binop(F, IR_ADD, ptr, ir_consti(F, offsetof(strukt, field))))
+    _ir_binop(F, IR_ADD, ptr, _ir_consti(F, offsetof(strukt, field))))
 #define ir_getfieldptr(ptr, strukt, field) \
     _ir_getfieldptr(_irfunc, ptr, strukt, field)
 
 /* Loads the field value. */
 #define _ir_loadfield(F, type, ptr, strukt, field) \
-  (ir_load(F, type, ir_getfieldptr(F, ptr, strukt, field)))
+  (_ir_load(F, type, _ir_getfieldptr(F, ptr, strukt, field)))
 #define ir_loadfield(type, ptr, strukt, field) \
     _ir_loadfield(_irfunc, type, ptr, strukt, field)
  
 /* DEBUG: Prints the function */
 void _ir_print(IRFunction *F);
-#define ir_print(_irfunc)
+#define ir_print() _ir_print(_irfunc)
 
 #endif
 

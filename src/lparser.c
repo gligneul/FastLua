@@ -569,7 +569,7 @@ static void close_func (LexState *ls) {
   f->sizeupvalues = fs->nups;
   lua_assert(fs->bl == NULL);
   ls->fs = fs->prev;
-  flP_initproto(L, f);
+  flprof_initproto(L, f);
   luaC_checkGC(L);
 }
 

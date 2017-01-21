@@ -23,8 +23,9 @@
  */
 
 /*
- * This module is responsable for recording the opcodes and creating
- * the trace.
+ * This module records the executed opcodes and create the trace.
+ * After the trace is recorded, if it is valid, the fl_jit module is called and
+ * the trace will be compiled into machine code.
  */
 
 #ifndef fl_rec_h
@@ -32,25 +33,21 @@
 
 #include "llimits.h"
 
+/* Foward declarations */
 struct lua_State;
 struct CallInfo;
 
-/*
- * Obtains the recording enabled/disabled flag
- */
-#define flR_recflag(L) (L->recflag)
+/* Obtains the recording enabled/disabled flag. */
+#define flrec_isrecording(L) (L->jit_isrecording)
 
-/*
- * Starts/stops the recording
- */
-void flR_start(struct lua_State *L);
-void flR_stop(struct lua_State *L);
+/* Start/stop the recording. */
+void flrec_start(struct lua_State *L);
+void flrec_stop(struct lua_State *L);
 
-/*
- * Records the current trace
- */
-#define flR_record(L, ci) { if (flR_recflag(L)) flR_record_(L, ci); }
-void flR_record_(struct lua_State *L, struct CallInfo *ci);
+/* Record the current opcode and write it into the current trace. */
+#define flrec_record(L, ci) \
+  do { if (flrec_isrecording(L)) flrec_record_(L, ci); } while (0)
+void flrec_record_(struct lua_State *L, struct CallInfo *ci);
 
 #endif
 

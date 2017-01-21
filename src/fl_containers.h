@@ -136,10 +136,12 @@ void funcprefix##resize(typename *v, size_t newsize); \
 void funcprefix##push(typename *v, T value); \
 T funcprefix##pop(typename *v); \
 void funcprefix##insert(typename *v, size_t pos, T value); \
+void funcprefix##erase(typename *v, size_t pos); \
 T funcprefix##get(typename *v, size_t pos); \
 void funcprefix##set(typename *v, size_t pos, T value); \
 T funcprefix##front(typename *v); \
 T funcprefix##back(typename *v); \
+T *funcprefix##data(typename *v); \
 
 #define TSCC_IMPL_VECTOR(typename, funcprefix, T) \
    TSCC_IMPL_VECTOR_WA(typename, funcprefix, T, void *, tscc_realloc_default) \
@@ -223,6 +225,15 @@ void funcprefix##insert(typename *v, size_t pos, T value) \
         v->buffer[pos] = value; \
         v->size++; \
     } \
+void funcprefix##erase(typename *v, size_t pos) \
+{ \
+        size_t i; \
+        tscc_assert(v, "null vector"); \
+        tscc_assert(pos <= v->size, "out of bounds"); \
+        for (i = pos; i < v->size; ++i) \
+            v->buffer[i] = v->buffer[i + 1]; \
+        v->size--; \
+    } \
 T funcprefix##get(typename *v, size_t pos) \
 { \
         tscc_assert(v, "null vector"); \
@@ -246,6 +257,10 @@ T funcprefix##back(typename *v) \
         tscc_assert(v, "null vector"); \
         tscc_assert(v->size > 0, "empty vector"); \
         return v->buffer[v->size - 1]; \
+    } \
+T *funcprefix##data(typename *v) \
+{ \
+        return v->buffer; \
     } \
 
 /* Vector declaration end */

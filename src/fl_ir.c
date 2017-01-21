@@ -52,7 +52,7 @@ IRFunction *ir_create(struct lua_State *L) {
   return F;
 }
 
-void _ir_destroy(IRFunction *F) {
+void ir_destroy(IRFunction *F) {
   lua_State *L = F->L;
   size_t i, j, k;
   for (i = 0; i < ir_bbvec_size(F->bblocks); ++i) {
@@ -79,6 +79,10 @@ IRBBlock *_ir_addbblock(IRFunction *F) {
   ir_bbvec_push(F->bblocks, bb);
   F->currbb = bb;
   return bb;
+}
+
+IRBBlock *_ir_getbblock(IRFunction *F, size_t pos) {
+  return ir_bbvec_get(F->bblocks, pos);
 }
 
 /* Create a command in the current basic block */
@@ -149,13 +153,20 @@ IRValue _ir_phi(IRFunction *F, enum IRType type) {
 }
 
 void _ir_addphinode(IRFunction *F, IRCommand *cmd, IRValue value,
-    IRBBlock *bblock) {
+                    IRBBlock *bblock) {
   IRPhiNode *phi = luaM_new(F->L, IRPhiNode);
   phi->value = value;
   phi->bblock = bblock;
   ir_phivec_push(cmd->args.phi, phi);
   assert(cmd->cmdtype == IR_PHI);
   assert(cmd->type == value->type);
+}
+
+void _ir_move(IRFunction *F, IRBBlock *bb, size_t from, size_t to) {
+  (void)F;
+  IRCommand *cmd = ir_cmdvec_get(bb->cmds, from);
+  ir_cmdvec_erase(bb->cmds, from);
+  ir_cmdvec_insert(bb->cmds, to, cmd);
 }
 
 /* Replace helper */
@@ -275,8 +286,7 @@ static void printcmd(IRCommand *cmd, IRBBlockTable *bbindices,
   ir_log("  ");
   if (cmd->type != IR_VOID) {
     printvalue(cmd, cmdindices);
-    ir_log(" : ");
-    printtype(cmd->type);
+    /* ir_log(" : "); printtype(cmd->type); */
     ir_log(" = ");
   }
   switch (cmd->cmdtype) {
@@ -314,15 +324,16 @@ static void printcmd(IRCommand *cmd, IRBBlockTable *bbindices,
       break;
     case IR_PHI: {
       size_t i, n = ir_phivec_size(cmd->args.phi);
-      ir_log("phi [");
+      ir_log("phi [<");
       for (i = 0; i < n; ++i) {
         IRPhiNode *phi = ir_phivec_get(cmd->args.phi, i);
         printbblock(phi->bblock, bbindices);
-        ir_log(" -> ");
+        ir_log(", ");
         printvalue(phi->value, cmdindices);
         if (i != n - 1)
-          ir_log("; ");
+          ir_log(">, <");
       }
+      ir_log(">]");
       break;
     }
   }
@@ -338,6 +349,8 @@ static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
     ir_bbtab_insert(bbindices, bb, (int)i);
     for (j = 0; j < ir_cmdvec_size(bb->cmds); ++j) {
       IRCommand *cmd = ir_cmdvec_get(bb->cmds, j);
+      if (cmd->cmdtype == IR_CONST || cmd->type == IR_VOID)
+        continue;
       ir_cmdtab_insert(cmdindices, cmd, cmdindex++);
     }
   }
@@ -351,7 +364,6 @@ static size_t getnumberofcmds(IRFunction *F) {
   }
   return ncmds;
 }
-
 
 void _ir_print(IRFunction *F) {
   size_t i, j;

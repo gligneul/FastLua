@@ -23,33 +23,33 @@
  */
 
 /*
- * This module is responsable for the profiling step of the jit compiler.
+ * This module does the profiling step of the jit compiler.
+ * The flrec_initproto routine changes the default opcodes of a Lua function to
+ * the corresponding profiling ones. Then, the profiling opcodes call the
+ * flrec_profile routine, which counts the number of times that a loop is
+ * executed. When the inner part of the loop is executed enough times
+ * (JIT_THRESHOLD), the fl_rec module is called and the trace is recorded.
  */
 
 #ifndef fl_prof_h
 #define fl_prof_h
 
+/* Foward declarations */
 struct Proto;
 struct CallInfo;
 struct lua_State;
 
-/*
- * Numbers of calls required to compile a trace.
- */
+/* Numbers of opcode executions required to record a trace. */
 #ifndef FL_JIT_THRESHOLD
 #define FL_JIT_THRESHOLD 50
 #endif
 
-/*
- * Initializes the function profiling data.
- */
-void flP_initproto(struct lua_State *L, struct Proto *p);
+/* Initializes the function profiling data. */
+void flprof_initproto(struct lua_State *L, struct Proto *p);
 
-/*
- * General profiling step.
- * loopcount should be greater than 0.
- */
-void flP_profile(struct lua_State *L, struct CallInfo *ci, short loopcount);
+/* General profiling step.
+ * loopcount should be greater than 0. */
+void flprof_profile(struct lua_State *L, struct CallInfo *ci, short loopcount);
 
 #endif
 

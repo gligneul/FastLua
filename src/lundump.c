@@ -215,7 +215,7 @@ static void LoadFunction (LoadState *S, Proto *f, TString *psource) {
   LoadUpvalues(S, f);
   LoadProtos(S, f);
   LoadDebug(S, f);
-  flP_initproto(S->L, f);
+  flprof_initproto(S->L, f);
 }
 
 
