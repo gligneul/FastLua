@@ -34,12 +34,9 @@
 #include "fl_rec.h"
 #include "fl_jit.h"
 
-#define tracerec(L) (L->tracerec)
-#define recflag(L) (flR_recflag(L))
+#define tracerec(L) (L->jit_tracerec)
 
-/*
- * Some macros from lvm.c
- */
+/* Some macros stolen from lvm */
 #define RA(i)	(base+GETARG_A(i))
 #define RB(i)	check_exp(getBMode(GET_OPCODE(i)) == OpArgR, base+GETARG_B(i))
 #define RC(i)	check_exp(getCMode(GET_OPCODE(i)) == OpArgR, base+GETARG_C(i))
@@ -48,27 +45,23 @@
 #define RKC(i)	check_exp(getCMode(GET_OPCODE(i)) == OpArgK, \
 	ISK(GETARG_C(i)) ? k+INDEXK(GETARG_C(i)) : base+GETARG_C(i))
 
-/*
- * Produce the runtime information of the instruction.
- * Returns 1 if the instruction can be compiled, else returns 0.
- */
-static int trygatherrt(CallInfo *ci, Instruction i, RuntimeRec *rt) {
+/* Produce the runtime information of the instruction.
+ * Return 1 if the instruction can be compiled, else return 0. */
+static int creatert(CallInfo *ci, Instruction i, union JitRTInfo *rt) {
   TValue *base = ci->u.l.base;
   TValue *k = getproto(ci->func)->k;
   switch (GET_OPCODE(i)) {
     case OP_ADD:
     case OP_SUB:
     case OP_MUL: {
-      TValue *rkb = RKB(i);
-      TValue *rkc = RKC(i);
-      rt->binoptypes.rb = ttype(rkb);
-      rt->binoptypes.rc = ttype(rkc);
-      /* only compiles int/float ops */
+      TValue *rkb = RKB(i), *rkc = RKC(i);
+      rt->binop.rb = ttype(rkb);
+      rt->binop.rc = ttype(rkc);
+      /* TODO: now only compiles int/float opcodes :'( */
       return ttisnumber(rkb) && ttisnumber(rkc);
     }
     case OP_FORLOOP: {
-      TValue *ra = RA(i);
-      rt->forlooptype = ttype(ra);
+      rt->forloop.ittype = ttype(RA(i));
       return 1;
     }
     default:
@@ -77,42 +70,44 @@ static int trygatherrt(CallInfo *ci, Instruction i, RuntimeRec *rt) {
   return 0;
 }
 
-void flR_start(lua_State *L) {
-  assert(!recflag(L));
+void flrec_start(struct lua_State *L) {
+  assert(!flrec_isrecording(L));
   assert(!tracerec(L));
-  recflag(L) = 1;
-  tracerec(L) = flJ_createtracerec(L);
+  flrec_isrecording(L) = 1;
+  tracerec(L) = fljit_createtrace(L);
 }
 
-void flR_stop(lua_State *L) {
-  assert(recflag(L));
+void flrec_stop(struct lua_State *L) {
+  assert(flrec_isrecording(L));
   assert(tracerec(L));
-  recflag(L) = 0;
-  flJ_compile(L, tracerec(L));
-  flJ_destroytracerec(L, tracerec(L));
+  flrec_isrecording(L) = 0;
+  fljit_compile(tracerec(L));
+  fljit_destroytrace(tracerec(L));
   tracerec(L) = NULL;
 }
 
-void flR_record_(struct lua_State *L, struct CallInfo* ci) {
-  TraceRec *tr = tracerec(L);
+void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
+  JitTrace *tr = tracerec(L);
   const Instruction *i = ci->u.l.savedpc;
-  if (!tr->start) {
-    /* start the recording */
-    tr->p = getproto(ci->func);
-    tr->start = i;
+  if (tr->start != i) {
+    if (tr->start == NULL) {
+      /* start the recording */
+      tr->p = getproto(ci->func);
+      tr->start = i;
+    }
+    union JitRTInfo rt;
+    if (creatert(ci, *i, &rt)) {
+      fljit_rtvec_push(tr->rtinfo, rt);
+      tr->n++;
+    }
+    else {
+      flrec_stop(L);
+    }
   }
-  else if (tr->start == i) {
+  else {
     /* back to the loop start */
     tr->completeloop = 1;
-    flR_stop(L);
-    return;
-  }
-  luaM_growvector(L, tr->rt, tr->n, tr->rtsize, RuntimeRec, MAX_INT, "");
-  if (trygatherrt(ci, *i, &tr->rt[tr->n])) {
-    tr->n++;
-  } else {
-    flR_stop(L);
+    flrec_stop(L);
   }
 }
-
 

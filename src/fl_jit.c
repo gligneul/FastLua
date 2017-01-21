@@ -34,79 +34,88 @@
 #include "fl_ir.h"
 #include "fl_jit.h"
 
-/*
- * The first basic block is the loop preamble and the second is the loop body.
- */
+/* Internal types */
+typedef struct JitState JitState;
+typedef struct JitRegister JitRegister;
+
+/* Containers */
+TSCC_IMPL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, union JitRTInfo,
+    struct lua_State *, luaM_realloc_)
+TSCC_DECL_HASHTABLE_WA(JitRegTable, regtab_, int, JitRegister *,
+    struct lua_State *)
+TSCC_IMPL_HASHTABLE_WA(JitRegTable, regtab_, int, JitRegister *,
+    tscc_int_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
+
+/* The first basic block is the loop entry and the second is the loop body. */
 #define BBLOCK_ENTRY 0
 #define BBLOCK_LOOP 1
 
-/*
- * Stores the jit compilation state.
- */
-typedef struct JitState {
+/* IRFunction implict parameter. */
+#define _irfunc (J->irfunc)
+
+/* Store the jit compilation state. */
+struct JitState {
   lua_State *L;
-  TraceRec *tr;
-  IRFunction *F;
+  JitTrace *tr;
+  IRFunction *irfunc;
   IRValue lstate;
   IRValue ci;
   IRValue base;
-  IRValue *rvalues;
-  IRValue *rtypes;
+  JitRegTable *regtable;
   l_mem pc;
-} JitState;
+};
 
-/*
- * Creates/destroy the jit state.
- */
-static JitState *createjitstate(lua_State *L, TraceRec *tr) {
-  int i;
+/* Information about a Lua stack register. */
+struct JitRegister {
+  IRValue value;
+  IRValue type;
+  IRValue phivalue;
+  IRValue phitype;
+};
+
+/* Create the jit state. */
+static JitState *createjitstate(lua_State *L, JitTrace *tr) {
   JitState *J = luaM_new(L, JitState);
   J->L = L;
   J->tr = tr;
-  J->F = flI_createfunc(L);
-  J->lstate = IRNullValue;
-  J->ci = IRNullValue;
-  J->base = IRNullValue;
-  J->rvalues = luaM_newvector(L, tr->p->maxstacksize, IRValue);
-  J->rtypes = luaM_newvector(L, tr->p->maxstacksize, IRValue);
-  for (i = 0; i < tr->p->maxstacksize; ++i)
-    J->rvalues[i] = J->rtypes[i] = IRNullValue;
+  J->irfunc = ir_create(L);
+  J->lstate = NULL;
+  J->ci = NULL;
+  J->base = NULL;
+  J->regtable = regtab_createwa(16, L);
   J->pc = tr->start - tr->p->code;
   return J;
 }
 
+/* Destroy the jit state. */
 static void destroyjitstate(JitState *J) {
-  flI_destroyfunc(J->F);
-  luaM_freearray(J->L, J->rvalues, J->tr->p->maxstacksize);
-  luaM_freearray(J->L, J->rtypes, J->tr->p->maxstacksize);
+  ir_destroy(J->irfunc);
+  /* TODO fix leak! delete the JitRegisters */
+  regtab_destroy(J->regtable);
   luaM_free(J->L, J);
 }
 
-/*
- * Creates the entry basic block.
- * This block contains the trace (loop) invariants.
- */
+/* Create a jit register and add it to the register's table. */
+static JitRegister *createregister(JitState *J, int reg, IRValue value,
+                                   IRValue type) {
+  JitRegister *r = luaM_new(J->L, JitRegister);
+  r->value = value;
+  r->type = type;
+  r->phivalue = r->phitype = NULL;
+  regtab_insert(J->regtable, reg, r);
+  return r;
+}
+
+/* Create the entry basic block.
+ * This block should contain the loop invariants. */
 static void initentryblock(JitState *J) {
-  IRFunction *F = J->F;
-  flI_createbb(F);
-  J->lstate = flI_getarg(F, IR_INTPTR, 0);
-  J->ci = flI_getarg(F, IR_INTPTR, 1);
-  J->base = flI_getarg(F, IR_INTPTR, 2);
+  ir_addbblock();
+  J->lstate = ir_getarg(IR_INTPTR, 0);
+  J->ci = ir_getarg(IR_INTPTR, 1);
+  J->base = ir_getarg(IR_INTPTR, 2);
 }
 
-/*
- * Create stubs that can be replaced by phi values later.
- */
-static void createstubs(JitState *J) {
-  int i;
-  int nstubs = J->tr->p->maxstacksize * 2;
-  for (i = 0; i < nstubs; ++i)
-    flI_stub(J->F);
-}
-
-/*
- * Obtains the next instruction position.
- */
+/* Obtain the next instruction position. */
 static l_mem getnextpc(l_mem oldpc, Instruction i) {
   l_mem pc = oldpc;
   switch (GET_OPCODE(i)) {
@@ -120,10 +129,8 @@ static l_mem getnextpc(l_mem oldpc, Instruction i) {
   return pc;
 }
 
-/*
- * Converts from lua type to ir type.
- */
-static int converttype(int type) {
+/* Convert the lua type to ir type. */
+static enum IRType converttype(int type) {
   switch (type) {
     case LUA_TNUMFLT:
       return IR_LUAFLT;
@@ -136,10 +143,8 @@ static int converttype(int type) {
   return 0;
 }
 
-/*
- * Converts the binary operation to the equivalente in the IR.
- */
-static int convertbinop(int op) {
+/* Convert the lua binary operation to ir command type. */
+static enum IRCommandType convertbinop(int op) {
   switch (op) {
     case OP_ADD:
       return IR_ADD;
@@ -150,121 +155,132 @@ static int convertbinop(int op) {
   return 0;
 }
 
-/*
- * Obtains a constant/register in the lua stack.
- */
-static IRValue gettvaluer(JitState *J, int v, int expectedtype) {
-  IRFunction *F = J->F;
-  IRValue *savedvalue = J->rvalues + v;
-  IRValue *savedtype = J->rtypes + v;
-  if (flI_isnullvalue(*savedvalue)) {
-    IRValue offset, addr;
-    flI_setcurrbb(F, BBLOCK_ENTRY);
-    offset = flI_consti(F, sizeof(TValue) * v);
-    addr = flI_binop(F, IR_ADD, J->base, offset);
-    *savedvalue = flI_loadfield(F, expectedtype, addr, TValue, value_);
-    // TODO: verify if the loadedtype is correct
-    *savedtype = flI_loadfield(F, IR_INT, addr, TValue, tt_);
-    flI_setcurrbb(F, BBLOCK_LOOP);
-  } else {
-    // TODO: verify if the loadedtype is correct
+/* Load a register from the Lua stack and verify if it matches the expected
+ * type. Register are loaded in the entry block. */
+static IRValue gettvaluer(JitState *J, int regpos, int expectedtype) {
+  IRValue value;
+  enum IRType irtype = converttype(expectedtype);
+  if (!regtab_contains(J->regtable, regpos)) {
+    /* No information about the register was found, so create it */
+    size_t offset = sizeof(TValue) * regpos;
+    IRValue addr, type;
+    ir_currbblock() = ir_getbblock(BBLOCK_ENTRY);
+    if (offset != 0)
+      addr = ir_binop(IR_ADD, J->base, ir_consti(offset));
+    else
+      addr = J->base;
+    /* TODO: verify if the loadedtype is correct */
+    type = ir_loadfield(IR_INT, addr, TValue, tt_);
+    value = ir_loadfield(irtype, addr, TValue, value_);
+    createregister(J, regpos, value, type);
+    ir_currbblock() = ir_getbblock(BBLOCK_LOOP);
   }
-  return *savedvalue;
+  else {
+    /* TODO: verify if the current loadedtype is correct */
+    JitRegister *r = regtab_get(J->regtable, regpos, NULL);
+    value = r->value;
+  }
+  return value;
 }
 
-static IRValue gettvaluek(JitState *J, int v, int expectedtype) {
-  TValue *k = J->tr->p->k + v;
-  switch (ttype(k)) {
-    case LUA_TNUMFLT:
-      assert(expectedtype == IR_LUAFLT);
-      return flI_constf(J->F, fltvalue(k));
-    case LUA_TNUMINT:
-      assert(expectedtype == IR_LUAINT);
-      return flI_consti(J->F, ivalue(k));
-    default:
-      assert(0);
-      break;
+/* Load a constant from the constant table. */
+static IRValue gettvaluek(JitState *J, int kpos, int expectedtype) {
+  TValue *k = J->tr->p->k + kpos;
+  assert(expectedtype == ttype(k));
+  switch (expectedtype) {
+    case LUA_TNUMFLT: return ir_constf(fltvalue(k));
+    case LUA_TNUMINT: return ir_consti(ivalue(k));
+    default: assert(0); break;
   }
-  return IRNullValue;
+  return NULL;
 }
 
-static IRValue gettvalue(JitState *J, int v, int expectedtype) {
-  if (ISK(v))
-    return gettvaluek(J, INDEXK(v), expectedtype);
+/* Load a constant or register given the position. */
+static IRValue gettvalue(JitState *J, int pos, int expectedtype) {
+  if (ISK(pos))
+    return gettvaluek(J, INDEXK(pos), expectedtype);
   else
-    return gettvaluer(J, v, expectedtype);
+    return gettvaluer(J, pos, expectedtype);
 }
 
-/*
- * Add a phi at the begining of the loop basic block and also replace the usage
- * of the old value in this block. Returns the phi value.
+/* Add a phi at the begining of the loop basic block and replace the old value.
  */
-static IRValue insertphivalue(JitState *J, int stubpos, IRValue entryval,
-    IRValue loopval) {
-  IRValue phi = flI_phi(J->F, entryval, loopval);
-  IRValue stub = {BBLOCK_LOOP, stubpos};
-  flI_swapvalues(J->F, phi, stub);
-  flI_replacevalue(J->F, BBLOCK_LOOP, entryval, stub);
+static IRValue insertphivalue(JitState *J, IRValue entryval, IRValue loopval) {
+  size_t to, from;
+  IRBBlock *entry = ir_getbblock(BBLOCK_ENTRY);
+  IRBBlock *loop = ir_getbblock(BBLOCK_LOOP);
+  IRValue phi = ir_phi(entryval->type);
+  from = ir_cmdvec_size(loop->cmds) - 1;
+  ir_addphinode(phi, entryval, entry);
+  ir_addphinode(phi, loopval, loop);
+  /* find the last phi in the loop block */
+  for (to = 0; to < ir_cmdvec_size(loop->cmds); ++to)
+    if (ir_cmdvec_get(loop->cmds, to)->cmdtype != IR_PHI)
+      break;
+  ir_move(loop, from, to);
+  ir_replacevalue(loop, entryval, phi);
   return phi;
 }
 
-/*
- * Defines the lua register value.
- */
-static void settvalue(JitState *J, int reg, int type, IRValue value) {
-  IRFunction *F = J->F;
-  IRValue *savedvalue = J->rvalues + reg;
-  IRValue *savedtype = J->rtypes + reg;
-  IRValue irtype = flI_consti(F, type);
-  if (flI_isnullvalue(*savedvalue)) {
-    *savedvalue = value;
-    *savedtype = irtype;
-  } else if (flI_valuegetbb(*savedvalue) == BBLOCK_ENTRY) {
-    /* create a phi value */
-    *savedvalue = insertphivalue(J, reg * 2, *savedvalue, value);
-    *savedtype = insertphivalue(J, reg * 2 + 1, *savedtype, irtype);
-  } else {
-    /* replace the value of the loop block */
-    IRCommand *valuecmd = flI_getcmd(F, *savedvalue);
-    IRCommand *typecmd = flI_getcmd(F, *savedtype);
-    if (valuecmd->cmdtype == IR_PHI) {
-      valuecmd->args.phi.loop = value;
-      typecmd->args.phi.loop = irtype;
-    } else {
-      *savedvalue = value;
-      *savedtype = irtype;
+/* Define the Lua register value. */
+static void settvalue(JitState *J, int reg, int luatype, IRValue value) {
+  IRBBlock *entry = ir_getbblock(BBLOCK_ENTRY);
+  JitRegister *r = regtab_get(J->regtable, reg, NULL);
+  IRValue type = ir_consti(luatype);
+  if (!r) {
+    /* No information about the register was found, so create it */
+    createregister(J, reg, value, type);
+  }
+  else if (r->value->bblock == entry) {
+    /* The saved value is from the entry block, so create a phi and replace the
+     * old value. */
+    r->phivalue = insertphivalue(J, r->value, value);
+    r->phitype = insertphivalue(J, r->type, type);
+  }
+  else {
+    /* The saved value is from the loop block */
+    if (r->phivalue) {
+      /* Update the phi if it exists */
+      ir_phivec_get(r->phivalue->args.phi, BBLOCK_LOOP)->value = value;
+      ir_phivec_get(r->phitype->args.phi, BBLOCK_LOOP)->value = type;
     }
+    /* Update the saved value */
+    r->value = value;
+    r->type = type;
   }
 }
 
-/*
- * Auxiliary macros for obtaining the Lua's tvalues.
- */
-#define getrkb(J, i, rt) \
-  gettvalue(J, GETARG_B(i), converttype(rt->binoptypes.rb))
-#define getrkc(J, i, rt) \
-  gettvalue(J, GETARG_C(i), converttype(rt->binoptypes.rc))
+/* Auxiliary macros for obtaining the Lua's tvalues. */
+#define getrkb(J, i, rt) gettvalue(J, GETARG_B(i), rt.binop.rb)
+#define getrkc(J, i, rt) gettvalue(J, GETARG_C(i), rt.binop.rc)
 
 /*
  * Compiles a single opcode.
  */
 static void compilebytecode(JitState *J, int n) {
-  IRFunction *F = J->F;
   Proto *p = J->tr->p;
   Instruction i = p->code[J->pc];
-  RuntimeRec *rt = J->tr->rt + n;
+  union JitRTInfo rt = fljit_rtvec_get(J->tr->rtinfo, n);
   int op = GET_OPCODE(i);
   switch (op) {
     case OP_ADD: {
       IRValue rb = getrkb(J, i, rt);
       IRValue rc = getrkc(J, i, rt);
-      // TODO conversions
+      // TODO: conversions
+      // TOPO: rvalue -> resultingvalue
       int rtype = LUA_TNUMINT;
-      IRValue rvalue = flI_binop(F, convertbinop(op), rb, rc);
+      IRValue rvalue = ir_binop(convertbinop(op), rb, rc);
       settvalue(J, GETARG_A(i), rtype, rvalue);
       break;
     }
     case OP_FORLOOP: {
+      // Check if the loop is the expected type
+      // get step
+      // get idx
+      // get limit
+      // if to go back
+      // then (update indices)
+      // else exit loop (update external pc)
       break;
     }
     default:
@@ -274,36 +290,34 @@ static void compilebytecode(JitState *J, int n) {
   J->pc = getnextpc(J->pc, i);
 }
 
-TraceRec *flJ_createtracerec(struct lua_State *L) {
-  TraceRec *tr = luaM_new(L, TraceRec);
+JitTrace *fljit_createtrace(struct lua_State *L) {
+  JitTrace *tr = luaM_new(L, JitTrace);
+  tr->L = L;
   tr->p = NULL;
   tr->start = NULL;
   tr->n = 0;
-  tr->rt = NULL;
-  tr->rtsize = 0;
+  tr->rtinfo = fljit_rtvec_createwa(L);
   tr->completeloop = 0;
   return tr;
 }
 
-void flJ_destroytracerec(struct lua_State *L, TraceRec *tr) {
-  luaM_freearray(L, tr->rt, tr->rtsize);
-  luaM_free(L, tr);
+void fljit_destroytrace(JitTrace *tr) {
+  fljit_rtvec_destroy(tr->rtinfo);
+  luaM_free(tr->L, tr);
 }
 
-void flJ_compile(struct lua_State *L, TraceRec *tr) {
-  JitState *J = createjitstate(L, tr);
-  IRFunction *F = J->F;
+void fljit_compile(JitTrace *tr) {
+  JitState *J = createjitstate(tr->L, tr);
   initentryblock(J);
   if (tr->completeloop) {
-    int i;
-    flI_createbb(F);
-    createstubs(J);
+    size_t i;
+    ir_addbblock(); /* loop bblock */
     for (i = 0; i < tr->n; ++i)
       compilebytecode(J, i);
   } else {
     assert(0);
   }
-  flI_print(J->F);
+  ir_print();
   destroyjitstate(J);
 }
 

@@ -36,54 +36,45 @@
 #include "fl_prof.h"
 #include "fl_rec.h"
 
-#define profcat(op) op ## _PROF
+#define SWAP_OPCODE(i, from, to) \
+    case from: SET_OPCODE(i, to); break
 
-#define OPCODE_TO_PROF(i, op) \
-    case op: SET_OPCODE(i, profcat(op)); break
-
-#define PROF_TO_OPCODE(i, op) \
-    case profcat(op): SET_OPCODE(i, op); break
-
-/*
- * Swaps the default opcodes for the profiling ones
- */
+/* Swap the default opcodes for the profiling ones */
 static void init_opcodes(Instruction *code, int n) {
-  int i = 0;
+  int i;
   for (i = 0; i < n; ++i) {
     switch (GET_OPCODE(code[i])) {
-      OPCODE_TO_PROF(code[i], OP_FORPREP);
+      SWAP_OPCODE(code[i], OP_FORPREP, OP_FORPREP_PROF);
       default: break;
     }
   }
 }
 
-/*
- * Reset the instruction to the non-profiling version
- */
+/* Reset the instruction to the non-profiling version */
 static void reset_instruction(Instruction *i) {
   switch (GET_OPCODE(*i)) {
-    PROF_TO_OPCODE(*i, OP_FORPREP);
+    SWAP_OPCODE(*i, OP_FORPREP_PROF, OP_FORPREP);
     default:
       assert(0 && "failed to reset instruction");
       break;
   }
 }
 
-void flP_initproto(struct lua_State *L, struct Proto *p) {
+void flprof_initproto(struct lua_State *L, struct Proto *p) {
   p->icount = luaM_newvector(L, p->sizecode, short);
   memset(p->icount, 0, sizeof(short) * p->sizecode);
   init_opcodes(p->code, p->sizecode);
 }
 
-void flP_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
+void flprof_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
   assert(loopcount > 0);
-  if (!flR_recflag(L)) {
+  if (!flrec_isrecording(L)) {
     Proto *p = getproto(ci->func);
     l_mem i = ci->u.l.savedpc - 1 - p->code;
     assert(p->icount[i] < FL_JIT_THRESHOLD);
     p->icount[i] += loopcount;
     if (p->icount[i] >= FL_JIT_THRESHOLD) {
-      flR_start(L);
+      flrec_start(L);
       reset_instruction(&p->code[i]);
     }
   }

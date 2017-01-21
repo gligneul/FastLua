@@ -181,8 +181,8 @@ struct lua_State {
   unsigned short nCcalls;  /* number of nested C calls */
   l_signalT hookmask;
   lu_byte allowhook;
-  lu_byte recflag; /* jit recording flag; see fl_rec */
-  struct TraceRec *tracerec;
+  lu_byte jit_isrecording; /* jit recording flag; see fl_rec */
+  struct JitTrace *jit_tracerec;
 };
 
 

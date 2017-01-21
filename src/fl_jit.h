@@ -23,8 +23,7 @@
  */
 
 /*
- * This module is responsable for compiling the recorded trace into machine
- * code.
+ * This module compiles the recorded trace into machine code.
  */
 
 #ifndef fl_jit_h
@@ -32,38 +31,41 @@
 
 #include "llimits.h"
 
+#include "fl_containers.h"
+
+/* Foward declarations */
 struct lua_State;
 
-/*
- * Runtime information for each instruction
- */
-typedef union RuntimeRec {
-  lu_byte forlooptype;
-  struct { lu_byte rb, rc; } binoptypes;
-} RuntimeRec;
+/* Types defined in this module */
+typedef struct JitTrace JitTrace;
+union JitRTInfo;
 
-/*
- * Trace recording
- */
-typedef struct TraceRec {
-  Proto *p;
-  const Instruction *start;
-  int n;
-  RuntimeRec *rt;
-  int rtsize;
-  lu_byte completeloop;
-} TraceRec;
+/* Containers */
+TSCC_DECL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, union JitRTInfo,
+    struct lua_State *)
 
-/*
- * Creates/destroys a trace recording
- */
-TraceRec *flJ_createtracerec(struct lua_State *L);
-void flJ_destroytracerec(struct lua_State *L, TraceRec *tr);
+/* Runtime information for each opcode */
+union JitRTInfo {
+  struct { lu_byte ittype; } forloop;
+  struct { lu_byte rb, rc; } binop;
+};
 
-/*
- * Compiles the trace recording
- */
-void flJ_compile(struct lua_State *L, TraceRec *tr);
+/* JitTrace */
+struct JitTrace {
+  struct lua_State *L;          /* Lua state */
+  struct Proto *p;              /* Lua function */
+  const Instruction *start;     /* first opcode of the trace */
+  size_t n;                     /* number of opcodes in the recording */
+  JitRTInfoVector *rtinfo;      /* runtime info for each opcode */
+  lu_byte completeloop;         /* tell if the trace is a full loop */
+};
+
+/* Creates/destroys a trace recording. */
+JitTrace *fljit_createtrace(struct lua_State *L);
+void fljit_destroytrace(JitTrace *tr);
+
+/* Compiles the trace recording. */
+void fljit_compile(JitTrace *tr);
 
 #endif
 

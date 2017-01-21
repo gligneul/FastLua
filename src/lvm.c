@@ -801,7 +801,7 @@ void luaV_execute (lua_State *L) {
   for (;;) {
     Instruction i;
     StkId ra;
-    flR_record(L, ci);
+    flrec_record(L, ci);
     vmfetch();
     vmdispatch (GET_OPCODE(i)) {
       vmcase(OP_MOVE) {
@@ -1252,7 +1252,7 @@ void luaV_execute (lua_State *L) {
         if (loopcount > 0) {
           short lc = (loopcount > FL_JIT_THRESHOLD ?
                       FL_JIT_THRESHOLD : loopcount);
-          flP_profile(L, ci, lc);
+          flprof_profile(L, ci, lc);
         }
         ci->u.l.savedpc += GETARG_sBx(i);
         vmbreak;
