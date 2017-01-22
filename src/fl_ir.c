@@ -54,21 +54,17 @@ IRFunction *ir_create(struct lua_State *L) {
 
 void ir_destroy(IRFunction *F) {
   lua_State *L = F->L;
-  size_t i, j, k;
-  for (i = 0; i < ir_bbvec_size(F->bblocks); ++i) {
-    IRBBlock *bb = ir_bbvec_get(F->bblocks, i);
-    for (j = 0; j < ir_cmdvec_size(bb->cmds); ++j) {
-      IRCommand *cmd = ir_cmdvec_get(bb->cmds, j);
+  ir_bbvec_foreach(F->bblocks, bb, {
+    ir_cmdvec_foreach(bb->cmds, cmd, {
       if (cmd->cmdtype == IR_PHI) {
-        for (k = 0; k < ir_phivec_size(cmd->args.phi); ++k)
-          luaM_free(L, ir_phivec_get(cmd->args.phi, k));
+        ir_phivec_foreach(cmd->args.phi, phi, luaM_free(L, phi));
         ir_phivec_destroy(cmd->args.phi);
       }
       luaM_free(L, cmd);
-    }
+    });
     ir_cmdvec_destroy(bb->cmds);
     luaM_free(L, bb);
-  }
+  });
   ir_bbvec_destroy(F->bblocks);
   luaM_free(L, F);
 }
@@ -176,13 +172,11 @@ void _ir_move(IRFunction *F, IRBBlock *bb, size_t from, size_t to) {
 static void replacerec(IRFunction *F, IRBBlock *bb, IRValue old, IRValue new,
                        IRBBlockTable *visited)
 {
-  size_t i;
   if (ir_bbtab_contains(visited, bb))
     return;
   else
     ir_bbtab_insert(visited, bb, 1);
-  for (i = 0; i < ir_cmdvec_size(bb->cmds); ++i) {
-    IRCommand *cmd = ir_cmdvec_get(bb->cmds, i);
+  ir_cmdvec_foreach(bb->cmds, cmd, {
     if (cmd == old || cmd == new)
       continue;
     switch (cmd->cmdtype) {
@@ -203,17 +197,14 @@ static void replacerec(IRFunction *F, IRBBlock *bb, IRValue old, IRValue new,
       case IR_RET:
         replacehelper(cmd->args.ret.v, old, new);
         break;
-      case IR_PHI: {
-        size_t j;
-        for (j = 0; j < ir_phivec_size(cmd->args.phi); ++j) {
-          IRPhiNode *phi = ir_phivec_get(cmd->args.phi, j);
+      case IR_PHI:
+        ir_phivec_foreach(cmd->args.phi, phi, {
           replacehelper(phi->value, old, new);
           replacerec(F, phi->bblock, old, new, visited);
-        }
+        });
         break;
-      }
     }
-  }
+  });
 }
 
 void _ir_replacevalue(IRFunction *F, IRBBlock *bb, IRValue old, IRValue new) {
@@ -342,47 +333,37 @@ static void printcmd(IRCommand *cmd, IRBBlockTable *bbindices,
 
 static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
                         IRCommandTable *cmdindices) {
-  size_t i, j;
-  int cmdindex = 0;
-  for (i = 0; i < ir_bbvec_size(F->bblocks); ++i) {
-    IRBBlock *bb = ir_bbvec_get(F->bblocks, i);
-    ir_bbtab_insert(bbindices, bb, (int)i);
-    for (j = 0; j < ir_cmdvec_size(bb->cmds); ++j) {
-      IRCommand *cmd = ir_cmdvec_get(bb->cmds, j);
-      if (cmd->cmdtype == IR_CONST || cmd->type == IR_VOID)
-        continue;
-      ir_cmdtab_insert(cmdindices, cmd, cmdindex++);
-    }
-  }
+  int bbindex = 0, cmdindex = 0;
+  ir_bbvec_foreach(F->bblocks, bb, {
+    ir_bbtab_insert(bbindices, bb, bbindex++);
+    ir_cmdvec_foreach(bb->cmds, cmd, {
+      if (cmd->cmdtype != IR_CONST && cmd->type != IR_VOID)
+        ir_cmdtab_insert(cmdindices, cmd, cmdindex++);
+    });
+  });
 }
 
 static size_t getnumberofcmds(IRFunction *F) {
-  size_t i, ncmds = 0;
-  for (i = 0; i < ir_bbvec_size(F->bblocks); ++i) {
-    IRBBlock *bb = ir_bbvec_get(F->bblocks, i);
-    ncmds += ir_cmdvec_size(bb->cmds);
-  }
+  size_t ncmds = 0;
+  ir_bbvec_foreach(F->bblocks, bb, ncmds++);
   return ncmds;
 }
 
 void _ir_print(IRFunction *F) {
-  size_t i, j;
   size_t nblocks = ir_bbvec_size(F->bblocks);
   size_t ncmds = getnumberofcmds(F);
   IRBBlockTable *bbindices = ir_bbtab_createwa(nblocks, F->L);
   IRCommandTable *cmdindices = ir_cmdtab_createwa(ncmds, F->L);;
   fillindices(F, bbindices, cmdindices);
   ir_log("IR function (%p)\n", (void *)F);
-  for (i = 0; i < ir_bbvec_size(F->bblocks); ++i) {
-    IRBBlock *bb = ir_bbvec_get(F->bblocks, i);
+  ir_bbvec_foreach(F->bblocks, bb, {
     printbblock(bb, bbindices);
     ir_log(":\n");
-    for (j = 0; j < ir_cmdvec_size(bb->cmds); ++j) {
-      IRCommand *cmd = ir_cmdvec_get(bb->cmds, j);
+    ir_cmdvec_foreach(bb->cmds, cmd, {
       printcmd(cmd, bbindices, cmdindices);
-    }
+    });
     ir_log("\n");
-  }
+  });
   ir_log("\n");
   ir_bbtab_destroy(bbindices);
   ir_cmdtab_destroy(cmdindices);

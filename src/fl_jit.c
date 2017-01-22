@@ -41,10 +41,13 @@ typedef struct JitRegister JitRegister;
 /* Containers */
 TSCC_IMPL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, union JitRTInfo,
     struct lua_State *, luaM_realloc_)
+
 TSCC_DECL_HASHTABLE_WA(JitRegTable, regtab_, int, JitRegister *,
     struct lua_State *)
 TSCC_IMPL_HASHTABLE_WA(JitRegTable, regtab_, int, JitRegister *,
     tscc_int_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
+#define regtab_foreach(h, k, v, cmd) \
+    TSCC_HASH_FOREACH(JitRegTable, regtab_, h, int, k, JitRegister *, v, cmd)
 
 /* The first basic block is the loop entry and the second is the loop body. */
 #define BBLOCK_ENTRY 0
@@ -90,7 +93,7 @@ static JitState *createjitstate(lua_State *L, JitTrace *tr) {
 /* Destroy the jit state. */
 static void destroyjitstate(JitState *J) {
   ir_destroy(J->irfunc);
-  /* TODO fix leak! delete the JitRegisters */
+  regtab_foreach(J->regtable, _, reg, luaM_free(J->L, reg));
   regtab_destroy(J->regtable);
   luaM_free(J->L, J);
 }

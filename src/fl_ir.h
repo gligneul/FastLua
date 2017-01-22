@@ -63,10 +63,19 @@ typedef l_mem IRInt;
 
 /* Containers */
 TSCC_DECL_VECTOR_WA(IRBBlockVector, ir_bbvec_, IRBBlock *, struct lua_State *)
+#define ir_bbvec_foreach(vec, val, _cmd) \
+    TSCC_VECTOR_FOREACH(ir_bbvec_, vec, IRBBlock *, val, _cmd)
+
 TSCC_DECL_VECTOR_WA(IRCommandVector, ir_cmdvec_, IRCommand *,
     struct lua_State *)
+#define ir_cmdvec_foreach(vec, val, _cmd) \
+    TSCC_VECTOR_FOREACH(ir_cmdvec_, vec, IRCommand *, val, _cmd)
+
 TSCC_DECL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, IRPhiNode *,
     struct lua_State *)
+#define ir_phivec_foreach(vec, val, _cmd) \
+    TSCC_VECTOR_FOREACH(ir_phivec_, vec, IRPhiNode *, val, _cmd)
+
 TSCC_DECL_HASHTABLE_WA(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
     struct lua_State *)
 TSCC_DECL_HASHTABLE_WA(IRCommandTable, ir_cmdtab_, IRCommand *, int,
