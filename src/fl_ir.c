@@ -55,12 +55,12 @@ IRFunction *ir_create(struct lua_State *L) {
 void ir_destroy(IRFunction *F) {
   lua_State *L = F->L;
   ir_bbvec_foreach(F->bblocks, bb, {
-    ir_cmdvec_foreach(bb->cmds, cmd, {
-      if (cmd->cmdtype == IR_PHI) {
-        ir_phivec_foreach(cmd->args.phi, phi, luaM_free(L, phi));
-        ir_phivec_destroy(cmd->args.phi);
+    ir_cmdvec_foreach(bb->cmds, c, {
+      if (c->cmdtype == IR_PHI) {
+        ir_phivec_foreach(c->args.phi, phi, luaM_free(L, phi));
+        ir_phivec_destroy(c->args.phi);
       }
-      luaM_free(L, cmd);
+      luaM_free(L, c);
     });
     ir_cmdvec_destroy(bb->cmds);
     luaM_free(L, bb);
@@ -121,9 +121,10 @@ IRValue _ir_load(IRFunction *F, enum IRType type, IRValue mem) {
 }
 
 IRValue _ir_store(IRFunction *F, enum IRType type, IRValue mem, IRValue v) {
-  IRCommand *c = createcmd(F, type, IR_STORE);
+  IRCommand *c = createcmd(F, IR_VOID, IR_STORE);
   c->args.store.mem = mem;
   c->args.store.v = v;
+  c->args.store.type = type;
   assert(v->type == type || (v->type == IR_INTPTR && ir_isintt(type)));
   return c;
 }
@@ -133,6 +134,21 @@ IRValue _ir_binop(IRFunction *F, enum IRCommandType op, IRValue l, IRValue r) {
   c->args.binop.l = l;
   c->args.binop.r = r;
   assert(l->type == r->type);
+  return c;
+}
+
+IRValue _ir_jne(IRFunction *F, IRValue l, IRValue r, IRBBlock *bb) {
+  IRCommand *c = createcmd(F, IR_VOID, IR_JNE);
+  c->args.jne.l = l;
+  c->args.jne.r = r;
+  c->args.jne.bb = bb;
+  assert(l->type == r->type);
+  return c;
+}
+
+IRValue _ir_jmp(IRFunction *F, IRBBlock *bb) {
+  IRCommand *c = createcmd(F, IR_VOID, IR_JMP);
+  c->args.jmp = bb;
   return c;
 }
 
@@ -148,21 +164,21 @@ IRValue _ir_phi(IRFunction *F, enum IRType type) {
   return c;
 }
 
-void _ir_addphinode(IRFunction *F, IRCommand *cmd, IRValue value,
+void _ir_addphinode(IRFunction *F, IRCommand *c, IRValue value,
                     IRBBlock *bblock) {
   IRPhiNode *phi = luaM_new(F->L, IRPhiNode);
   phi->value = value;
   phi->bblock = bblock;
-  ir_phivec_push(cmd->args.phi, phi);
-  assert(cmd->cmdtype == IR_PHI);
-  assert(cmd->type == value->type);
+  ir_phivec_push(c->args.phi, phi);
+  assert(c->cmdtype == IR_PHI);
+  assert(c->type == value->type);
 }
 
 void _ir_move(IRFunction *F, IRBBlock *bb, size_t from, size_t to) {
   (void)F;
-  IRCommand *cmd = ir_cmdvec_get(bb->cmds, from);
+  IRCommand *c = ir_cmdvec_get(bb->cmds, from);
   ir_cmdvec_erase(bb->cmds, from);
-  ir_cmdvec_insert(bb->cmds, to, cmd);
+  ir_cmdvec_insert(bb->cmds, to, c);
 }
 
 /* Replace helper */
@@ -176,29 +192,33 @@ static void replacerec(IRFunction *F, IRBBlock *bb, IRValue old, IRValue new,
     return;
   else
     ir_bbtab_insert(visited, bb, 1);
-  ir_cmdvec_foreach(bb->cmds, cmd, {
-    if (cmd == old || cmd == new)
+  ir_cmdvec_foreach(bb->cmds, c, {
+    if (c == old || c == new)
       continue;
-    switch (cmd->cmdtype) {
-      case IR_CONST: case IR_GETARG:
+    switch (c->cmdtype) {
+      case IR_CONST: case IR_GETARG: case IR_JMP:
         /* do nothing */
         break;
       case IR_LOAD:
-        replacehelper(cmd->args.load.mem, old, new);
+        replacehelper(c->args.load.mem, old, new);
         break;
       case IR_STORE:
-        replacehelper(cmd->args.store.mem, old, new);
-        replacehelper(cmd->args.store.v, old, new);
+        replacehelper(c->args.store.mem, old, new);
+        replacehelper(c->args.store.v, old, new);
         break;
       case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV:
-        replacehelper(cmd->args.binop.l, old, new);
-        replacehelper(cmd->args.binop.r, old, new);
+        replacehelper(c->args.binop.l, old, new);
+        replacehelper(c->args.binop.r, old, new);
+        break;
+      case IR_JNE:
+        replacehelper(c->args.jne.l, old, new);
+        replacehelper(c->args.jne.r, old, new);
         break;
       case IR_RET:
-        replacehelper(cmd->args.ret.v, old, new);
+        replacehelper(c->args.ret.v, old, new);
         break;
       case IR_PHI:
-        ir_phivec_foreach(cmd->args.phi, phi, {
+        ir_phivec_foreach(c->args.phi, phi, {
           replacehelper(phi->value, old, new);
           replacerec(F, phi->bblock, old, new, visited);
         });
@@ -232,7 +252,7 @@ static void printtype(enum IRType type) {
     case IR_SHORT:  ir_log("short"); break;
     case IR_INT:    ir_log("int"); break;
     case IR_LUAINT: ir_log("luaint"); break;
-    case IR_INTPTR: ir_log("intptr"); break;
+    case IR_INTPTR: ir_log("iptr"); break;
     case IR_LUAFLT: ir_log("luafloat"); break;
   }
 }
@@ -249,8 +269,8 @@ static void printconst(enum IRType type, union IRConstant k) {
   ir_log(")");
 }
 
-static void printbinop(enum IRCommandType cmd) {
-  switch (cmd) {
+static void printbinop(enum IRCommandType c) {
+  switch (c) {
     case IR_ADD: ir_log("add"); break;
     case IR_SUB: ir_log("sub"); break;
     case IR_MUL: ir_log("mul"); break;
@@ -270,54 +290,68 @@ static void printbblock(IRBBlock *bb, IRBBlockTable *indices) {
   ir_log("bb_%d", ir_bbtab_get(indices, bb, -1));
 }
 
-static void printcmd(IRCommand *cmd, IRBBlockTable *bbindices,
+static void printcmd(IRCommand *c, IRBBlockTable *bbindices,
                      IRCommandTable *cmdindices) {
-  if (cmd->cmdtype == IR_CONST)
+  if (c->cmdtype == IR_CONST)
     return;
   ir_log("  ");
-  if (cmd->type != IR_VOID) {
-    printvalue(cmd, cmdindices);
-    /* ir_log(" : "); printtype(cmd->type); */
+  if (c->type != IR_VOID) {
+    printvalue(c, cmdindices);
+    /* ir_log(" : "); printtype(c->type); */
     ir_log(" = ");
   }
-  switch (cmd->cmdtype) {
+  switch (c->cmdtype) {
     case IR_CONST:
       /* do nothing */
       break;
     case IR_GETARG:
-      ir_log("getarg %d", cmd->args.getarg.n);
+      ir_log("getarg %d", c->args.getarg.n);
       break;
     case IR_LOAD:
       ir_log("load ");
-      printtype(cmd->args.load.type);
+      printtype(c->args.load.type);
       ir_log(" ");
-      printvalue(cmd->args.load.mem, cmdindices);
+      printvalue(c->args.load.mem, cmdindices);
       break;
     case IR_STORE:
       ir_log("store ");
-      printvalue(cmd->args.store.mem, cmdindices);
+      printvalue(c->args.store.mem, cmdindices);
       ir_log(" <- ");
-      printvalue(cmd->args.store.v, cmdindices);
+      printtype(c->args.store.type);
+      ir_log(" ");
+      printvalue(c->args.store.v, cmdindices);
       break;
     case IR_ADD:
     case IR_SUB:
     case IR_MUL:
     case IR_DIV:
-      printbinop(cmd->cmdtype);
+      printbinop(c->cmdtype);
       ir_log(" ");
-      printvalue(cmd->args.binop.l, cmdindices);
+      printvalue(c->args.binop.l, cmdindices);
       ir_log(" ");
-      printvalue(cmd->args.binop.r, cmdindices);
+      printvalue(c->args.binop.r, cmdindices);
+      break;
+    case IR_JNE:
+      ir_log("jne ");
+      printvalue(c->args.jne.l, cmdindices);
+      ir_log(" ");
+      printvalue(c->args.jne.r, cmdindices);
+      ir_log(" ");
+      printbblock(c->args.jne.bb, bbindices);
+      break;
+    case IR_JMP:
+      ir_log("jmp ");
+      printbblock(c->args.jmp, bbindices);
       break;
     case IR_RET:
       ir_log("ret ");
-      printvalue(cmd->args.ret.v, cmdindices);
+      printvalue(c->args.ret.v, cmdindices);
       break;
     case IR_PHI: {
-      size_t i, n = ir_phivec_size(cmd->args.phi);
+      size_t i, n = ir_phivec_size(c->args.phi);
       ir_log("phi [<");
       for (i = 0; i < n; ++i) {
-        IRPhiNode *phi = ir_phivec_get(cmd->args.phi, i);
+        IRPhiNode *phi = ir_phivec_get(c->args.phi, i);
         printbblock(phi->bblock, bbindices);
         ir_log(", ");
         printvalue(phi->value, cmdindices);
@@ -336,9 +370,9 @@ static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
   int bbindex = 0, cmdindex = 0;
   ir_bbvec_foreach(F->bblocks, bb, {
     ir_bbtab_insert(bbindices, bb, bbindex++);
-    ir_cmdvec_foreach(bb->cmds, cmd, {
-      if (cmd->cmdtype != IR_CONST && cmd->type != IR_VOID)
-        ir_cmdtab_insert(cmdindices, cmd, cmdindex++);
+    ir_cmdvec_foreach(bb->cmds, c, {
+      if (c->cmdtype != IR_CONST && c->type != IR_VOID)
+        ir_cmdtab_insert(cmdindices, c, cmdindex++);
     });
   });
 }
@@ -359,8 +393,8 @@ void _ir_print(IRFunction *F) {
   ir_bbvec_foreach(F->bblocks, bb, {
     printbblock(bb, bbindices);
     ir_log(":\n");
-    ir_cmdvec_foreach(bb->cmds, cmd, {
-      printcmd(cmd, bbindices, cmdindices);
+    ir_cmdvec_foreach(bb->cmds, c, {
+      printcmd(c, bbindices, cmdindices);
     });
     ir_log("\n");
   });

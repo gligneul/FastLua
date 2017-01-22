@@ -158,13 +158,29 @@ static enum IRCommandType convertbinop(int op) {
   return 0;
 }
 
+/* Create a guard instruction that verifies if the type matches what is
+ * expected. 
+ * The stack should only be restored if the guard fail inside the loop. */
+static void guardtype(JitState *J, IRValue type, int expectedtype,
+                      int restorestack) {
+  IRBBlock *originalbb = ir_currbblock();
+  IRBBlock *sideexit = ir_addbblock();
+  if (restorestack) {
+    /* TODO */
+  }
+  ir_return(ir_consti(1)); 
+  ir_currbblock() = originalbb;
+  ir_jne(type, ir_consti(expectedtype), sideexit);
+}
+
 /* Load a register from the Lua stack and verify if it matches the expected
- * type. Register are loaded in the entry block. */
+ * type. Registers are loaded in the entry block. */
 static IRValue gettvaluer(JitState *J, int regpos, int expectedtype) {
   IRValue value;
   enum IRType irtype = converttype(expectedtype);
   if (!regtab_contains(J->regtable, regpos)) {
-    /* No information about the register was found, so create it */
+    /* No information about the register was found, so load it from the stack
+     * at the entry block. */
     size_t offset = sizeof(TValue) * regpos;
     IRValue addr, type;
     ir_currbblock() = ir_getbblock(BBLOCK_ENTRY);
@@ -172,8 +188,8 @@ static IRValue gettvaluer(JitState *J, int regpos, int expectedtype) {
       addr = ir_binop(IR_ADD, J->base, ir_consti(offset));
     else
       addr = J->base;
-    /* TODO: verify if the loadedtype is correct */
     type = ir_loadfield(IR_INT, addr, TValue, tt_);
+    guardtype(J, type, expectedtype, 0);
     value = ir_loadfield(irtype, addr, TValue, value_);
     createregister(J, regpos, value, type);
     ir_currbblock() = ir_getbblock(BBLOCK_LOOP);
@@ -317,6 +333,9 @@ void fljit_compile(JitTrace *tr) {
     ir_addbblock(); /* loop bblock */
     for (i = 0; i < tr->n; ++i)
       compilebytecode(J, i);
+    /* add a jmp from entry to loop block */
+    ir_currbblock() = ir_getbblock(BBLOCK_ENTRY);
+    ir_jmp(ir_getbblock(BBLOCK_LOOP));
   } else {
     assert(0);
   }

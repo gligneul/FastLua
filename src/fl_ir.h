@@ -102,6 +102,8 @@ enum IRCommandType {
   IR_SUB,
   IR_MUL,
   IR_DIV,
+  IR_JNE,
+  IR_JMP,
   IR_RET,
   IR_PHI,
 };
@@ -136,8 +138,10 @@ struct IRCommand {
     union IRConstant konst;
     struct { int n; } getarg;
     struct { IRValue mem; enum IRType type; } load;
-    struct { IRValue mem, v; } store;
+    struct { IRValue mem, v; enum IRType type; } store;
     struct { IRValue l, r; } binop;
+    struct { IRValue l, r; IRBBlock *bb; } jne;
+    IRBBlock *jmp;
     struct { IRValue v; } ret;
     IRPhiNodeVector *phi;
   } args;
@@ -175,6 +179,8 @@ IRValue _ir_getarg(IRFunction *F, enum IRType type, int n);
 IRValue _ir_load(IRFunction *F, enum IRType type, IRValue mem);
 IRValue _ir_store(IRFunction *F, enum IRType type, IRValue mem, IRValue val);
 IRValue _ir_binop(IRFunction *F, enum IRCommandType op, IRValue l, IRValue r);
+IRValue _ir_jne(IRFunction *F, IRValue l, IRValue r, IRBBlock *bb);
+IRValue _ir_jmp(IRFunction *F, IRBBlock *bb);
 IRValue _ir_return(IRFunction *F, IRValue v);
 IRValue _ir_phi(IRFunction *F, enum IRType type);
 #define ir_consti(i) _ir_consti(_irfunc, i)
@@ -183,6 +189,8 @@ IRValue _ir_phi(IRFunction *F, enum IRType type);
 #define ir_load(type, mem) _ir_load(_irfunc, type, mem)
 #define ir_store(type, mem, val) _ir_store(_irfunc, type, mem, val)
 #define ir_binop(op, l, r) _ir_binop(_irfunc, op, l, r)
+#define ir_jne(l, r, bb) _ir_jne(_irfunc, l, r, bb)
+#define ir_jmp(bb) _ir_jmp(_irfunc, bb)
 #define ir_return(v) _ir_return(_irfunc, v)
 #define ir_phi(type) _ir_phi(_irfunc, type)
 
