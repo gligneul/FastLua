@@ -353,7 +353,7 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
       printvalue(v->args.store.v, valindices);
       break;
     case IR_BINOP:
-      printbinop(v->instr);
+      printbinop(v->args.binop.op);
       ir_log(" ");
       printvalue(v->args.binop.l, valindices);
       ir_log(" ");

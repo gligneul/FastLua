@@ -73,6 +73,8 @@ struct JitRegister {
   IRValue *type;
   IRValue *phivalue;
   IRValue *phitype;
+  IRValue *loadedvalue;
+  IRValue *loadedtype;
   int loadedfromstack;
 };
 
@@ -110,6 +112,12 @@ static JitRegister *createregister(JitState *J, int reg, IRValue *value,
   r->value = value;
   r->type = type;
   r->phivalue = r->phitype = NULL;
+  if (loadedfromstack) {
+    r->loadedvalue = r->value;
+    r->loadedtype = r->type;
+  } else {
+    r->loadedvalue = r->loadedtype = NULL;
+  }
   r->loadedfromstack = loadedfromstack;
   regtab_insert(J->regtable, reg, r);
   return r;
@@ -157,6 +165,11 @@ static enum IRBinOp convertbinop(int op) {
   return 0;
 }
 
+/* Set the current bblock to the last bblock in the loop */
+static void resetcurrbblock(JitState *J) {
+  ir_currbblock() = ir_bbvec_back(J->loop);
+}
+
 /* Create a guard instruction that verifies if the type matches what is
  * expected. 
  * The stack should only be restored if the guard fail inside the loop. */
@@ -201,7 +214,7 @@ static IRValue *gettvaluer(JitState *J, int regpos, int expectedtype) {
     guardtype(J, type, expectedtype, J->entry);
     value = ir_loadfield(irtype, addr, TValue, value_);
     createregister(J, regpos, value, type, 1);
-    ir_currbblock() = ir_bbvec_back(J->loop);
+    resetcurrbblock(J);
   }
   else {
     /* TODO: verify if the current loadedtype is correct */
@@ -233,15 +246,11 @@ static IRValue *gettvalue(JitState *J, int pos, int expectedtype) {
 
 /* Add a phi at the begining of the loop basic block and replace the old value.
  */
-static IRValue *insertphivalue(JitState *J, IRValue *entryval,
-                               IRValue *loopval) {
+static IRValue *insertphivalue(JitState *J, IRValue *entryval) {
   IRBBlock *loopstart = ir_bbvec_front(J->loop);
   size_t to = 0, from = ir_valvec_size(loopstart->values);
   ir_currbblock() = loopstart;
   IRValue *phi = ir_phi(entryval->type);
-  /* TODO fix: those nodes' bblocks should be update */
-  ir_addphinode(phi, entryval, ir_bbvec_back(J->entry));
-  ir_addphinode(phi, loopval, ir_bbvec_back(J->loop));
   /* find the last phi in the loop block */
   ir_valvec_foreach(loopstart->values, v, {
     if (v->instr != IR_PHI)
@@ -251,31 +260,39 @@ static IRValue *insertphivalue(JitState *J, IRValue *entryval,
   });
   ir_move(loopstart, from, to);
   ir_replacevalue(loopstart, entryval, phi);
-  ir_currbblock() = ir_bbvec_back(J->loop);
+  resetcurrbblock(J);
   return phi;
 }
 
+/* Create the phi nodes for the registers that have phi values. */
+static void linkphivalues(JitState *J) {
+  IRBBlock *entry = ir_bbvec_back(J->entry);
+  IRBBlock *loop = ir_bbvec_back(J->loop);
+  regtab_foreach(J->regtable, _, r, {
+    if (r->phivalue) {
+      ir_addphinode(r->phivalue, r->loadedvalue, entry);
+      ir_addphinode(r->phivalue, r->value, loop);
+      ir_addphinode(r->phitype, r->loadedtype, entry);
+      ir_addphinode(r->phitype, r->type, loop);
+    }
+  });
+}
+
 /* Define the Lua register value. */
-static void settvalue(JitState *J, int reg, int luatype, IRValue *value) {
-  JitRegister *r = regtab_get(J->regtable, reg, NULL);
+static void settvalue(JitState *J, int regpos, int luatype, IRValue *value) {
+  JitRegister *r;
   IRValue *type = ir_consti(luatype);
-  if (!r) {
+  if (!regtab_find(J->regtable, regpos, &r)) {
     /* No information about the register was found, so create it */
-    createregister(J, reg, value, type, 0);
-  }
-  else if (r->loadedfromstack) {
-    /* The saved value is from the entry block, so create a phi and replace the
-     * old value. */
-    r->phivalue = insertphivalue(J, r->value, value);
-    r->phitype = insertphivalue(J, r->type, type);
-    r->loadedfromstack = 0;
+    createregister(J, regpos, value, type, 0);
   }
   else {
-    /* The saved value is from the loop block */
-    if (r->phivalue) {
-      /* Update the phi if it exists */
-      ir_phivec_get(r->phivalue->args.phi, 0)->value = value;
-      ir_phivec_get(r->phitype->args.phi, 0)->value = type;
+    if (r->loadedfromstack) {
+      /* The saved value is from the entry block, so create a phi and replace
+       * the old value. */
+      r->phivalue = insertphivalue(J, r->value);
+      r->phitype = insertphivalue(J, r->type);
+      r->loadedfromstack = 0;
     }
     /* Update the saved value */
     r->value = value;
@@ -380,6 +397,7 @@ void fljit_compile(JitTrace *tr) {
     /* add a jmp from entry to loop block */
     ir_currbblock() = ir_bbvec_back(J->entry);
     ir_jmp(ir_bbvec_front(J->loop));
+    linkphivalues(J);
   } else {
     assert(0);
   }
