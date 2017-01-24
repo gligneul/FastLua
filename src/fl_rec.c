@@ -61,7 +61,7 @@ static int creatert(CallInfo *ci, Instruction i, union JitRTInfo *rt) {
       return ttisnumber(rkb) && ttisnumber(rkc);
     }
     case OP_FORLOOP: {
-      rt->forloop.ittype = ttype(RA(i));
+      rt->forloop.type = ttype(RA(i));
       return 1;
     }
     default:

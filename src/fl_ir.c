@@ -77,22 +77,22 @@ static IRBBlock *createbblock(IRFunction *F) {
 }
 
 IRBBlock *_ir_addbblock(IRFunction *F) {
-  F->currbb = createbblock(F);
-  ir_bbvec_push(F->bblocks, F->currbb);
-  return F->currbb;
+  IRBBlock *bb = createbblock(F);
+  ir_bbvec_push(F->bblocks, bb);
+  return bb;
 }
 
 IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb) {
+  IRBBlock *bb = createbblock(F);
   size_t pos = 1;
-  ir_bbvec_foreach(F->bblocks, bb, {
-    if (bb == prevbb)
+  ir_bbvec_foreach(F->bblocks, thisbb, {
+    if (thisbb == prevbb)
       break;
     else
       pos++;
   });
-  F->currbb = createbblock(F);
-  ir_bbvec_insert(F->bblocks, pos, F->currbb);
-  return F->currbb;
+  ir_bbvec_insert(F->bblocks, pos, bb);
+  return bb;
 }
 
 IRBBlock *_ir_getbblock(IRFunction *F, size_t pos) {
@@ -303,10 +303,14 @@ static void printbinop(enum IRBinOp op) {
   }
 }
 
-static void printcmp(enum IRCmpOp op) {
+static void printcmpop(enum IRCmpOp op) {
   switch (op) {
-    case IR_NE: ir_log("ne"); break;
-    case IR_LE: ir_log("le"); break;
+    case IR_NE: ir_log("!="); break;
+    case IR_EQ: ir_log("=="); break;
+    case IR_LE: ir_log("<="); break;
+    case IR_LT: ir_log("<"); break;
+    case IR_GE: ir_log(">="); break;
+    case IR_GT: ir_log(">"); break;
   }
 }
 
@@ -360,14 +364,15 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
       printvalue(v->args.binop.r, valindices);
       break;
     case IR_CMP:
-      printcmp(v->args.cmp.op);
-      ir_log(" ");
+      ir_log("if ");
       printvalue(v->args.cmp.l, valindices);
       ir_log(" ");
+      printcmpop(v->args.cmp.op);
+      ir_log(" ");
       printvalue(v->args.cmp.r, valindices);
-      ir_log(" ? ");
+      ir_log(" then ");
       printbblock(v->args.cmp.truebr, bbindices);
-      ir_log(" : ");
+      ir_log(" else ");
       printbblock(v->args.cmp.falsebr, bbindices);
       break;
     case IR_JMP:

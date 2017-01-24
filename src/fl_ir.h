@@ -93,7 +93,7 @@ enum IRType {
 
 /* Intruction types */
 enum IRInstruction {
-  IR_CONST,
+  IR_CONST = IR_VOID + 1,
   IR_GETARG,
   IR_LOAD,
   IR_STORE,
@@ -106,7 +106,7 @@ enum IRInstruction {
 
 /* Binary operations */
 enum IRBinOp {
-  IR_ADD,
+  IR_ADD = IR_PHI + 1,
   IR_SUB,
   IR_MUL,
   IR_DIV,
@@ -114,8 +114,12 @@ enum IRBinOp {
 
 /* Comparisons */
 enum IRCmpOp {
-  IR_NE,
+  IR_NE = IR_DIV + 1,
+  IR_EQ,
   IR_LE,
+  IR_LT,
+  IR_GE,
+  IR_GT,
 };
 
 /* union IRConstant
@@ -173,11 +177,11 @@ void ir_destroy(IRFunction *F);
 /* Verify if a type is an integer. */
 #define ir_isintt(t) (t <= IR_IPTR)
 
-/* Create a basic block, set as the current one and returns it. */
+/* Create a basic block and returns it. */
 IRBBlock *_ir_addbblock(IRFunction *F);
 #define ir_addbblock() _ir_addbblock(_irfunc)
 
-/* Insert the basic block after bb, set as the current one and returns it. */
+/* Insert the basic block after bb and returns it. */
 IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb);
 #define ir_insertbblock(prevbb) _ir_insertbblock(_irfunc, prevbb)
 
@@ -228,15 +232,15 @@ void _ir_replacevalue(IRFunction *F, IRBBlock *b, IRValue *old, IRValue *new);
 #define ir_replacevalue(b, old, new) _ir_replacevalue(_irfunc, b, old, new)
 
 /* Obtains the address of a struct's field.  */
-#define _ir_getfieldptr(F, ptr, strukt, field) \
+#define _ir_getfieldaddr(F, ptr, strukt, field) \
   (offsetof(strukt, field) == 0 ? ptr : \
     _ir_binop(F, IR_ADD, ptr, _ir_consti(F, offsetof(strukt, field))))
-#define ir_getfieldptr(ptr, strukt, field) \
-    _ir_getfieldptr(_irfunc, ptr, strukt, field)
+#define ir_getfieldaddr(ptr, strukt, field) \
+    _ir_getfieldaddr(_irfunc, ptr, strukt, field)
 
 /* Loads the field value. */
 #define _ir_loadfield(F, type, ptr, strukt, field) \
-  (_ir_load(F, type, _ir_getfieldptr(F, ptr, strukt, field)))
+  (_ir_load(F, type, _ir_getfieldaddr(F, ptr, strukt, field)))
 #define ir_loadfield(type, ptr, strukt, field) \
     _ir_loadfield(_irfunc, type, ptr, strukt, field)
  

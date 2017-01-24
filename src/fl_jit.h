@@ -46,7 +46,7 @@ TSCC_DECL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, union JitRTInfo,
 
 /* Runtime information for each opcode */
 union JitRTInfo {
-  struct { lu_byte ittype; } forloop;
+  struct { lu_byte type; } forloop;
   struct { lu_byte rb, rc; } binop;
 };
 
