@@ -37,6 +37,7 @@
 /* Internal types */
 typedef struct JitState JitState;
 typedef struct JitRegister JitRegister;
+typedef struct JitExit JitExit;
 
 /* Containers */
 TSCC_IMPL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, union JitRTInfo,
@@ -49,61 +50,61 @@ TSCC_IMPL_HASHTABLE_WA(JitRegTable, regtab_, int, JitRegister *,
 #define regtab_foreach(h, k, v, cmd) \
     TSCC_HASH_FOREACH(JitRegTable, regtab_, h, int, k, JitRegister *, v, cmd)
 
+TSCC_DECL_VECTOR_WA(JitExitVector, exvec_, JitExit *, struct lua_State *)
+TSCC_IMPL_VECTOR_WA(JitExitVector, exvec_, JitExit *, struct lua_State *,
+    luaM_realloc_)
+#define exvec_foreach(vec, val, cmd) \
+    TSCC_VECTOR_FOREACH(exvec_, vec, JitExit *, val, cmd)
+
 /* IRFunction implict parameter. */
 #define _irfunc (J->irfunc)
 
 /* Store the jit compilation state. */
 struct JitState {
-  lua_State *L;
-  JitTrace *tr;
-  IRFunction *irfunc;
-  IRBBlockVector *entry;
-  IRBBlockVector *loop;
-  IRBBlock *earlyexit;
-  IRBBlock *loopexit;
-  IRValue *lstate;
-  IRValue *ci;
-  IRValue *base;
-  JitRegTable *regtable;
-  l_mem pc;
+  lua_State *L;             /* Lua state */
+  JitTrace *tr;             /* recorded trace */
+  IRFunction *irfunc;       /* IR output function */
+  IRBBlock *preloop;        /* last basic block before the loop start */
+  IRBBlock *loopstart;      /* first block in the loop */
+  IRBBlock *loopend;        /* last block in the loop */
+  IRBBlock *earlyexit;      /* side exit before the loop started */
+  JitExitVector *exits;     /* exits that must restore the lua stack */
+  IRValue *lstate;          /* Lua state in the jitted code */
+  IRValue *base;            /* Lua stack base */
+  JitRegTable *regtable;    /* record the JitRegister given the stack pos */
+  l_mem pc;                 /* current instruction position */
+};
+
+/* Information to build the side exit */
+struct JitExit {
+  IRBBlock *bb;             /* side exit basic block */
+  JitRegTable *registers;   /* regtable when the side exit was created */
+  int status;               /* return status */
 };
 
 /* Information about a Lua stack register. */
 struct JitRegister {
-  IRValue *value;
-  IRValue *type;
-  IRValue *phivalue;
-  IRValue *phitype;
-  IRValue *loadedvalue;
-  IRValue *loadedtype;
-  int loadedfromstack;
+  IRValue *value;           /* current value */
+  IRValue *type;            /* current type */
+  IRValue *phivalue;        /* phi value */
+  IRValue *phitype;         /* phi type */
+  IRValue *loadedvalue;     /* value loaded from Lua stack */
+  IRValue *loadedtype;      /* type loaded from Lua stack */
+  int loadedfromstack;      /* indicates if it was loaded from the stack */
 };
 
-/* Create the jit state. */
-static JitState *createjitstate(lua_State *L, JitTrace *tr) {
-  JitState *J = luaM_new(L, JitState);
-  J->L = L;
-  J->tr = tr;
-  J->irfunc = ir_create(L);
-  J->entry = ir_bbvec_createwa(L);
-  J->loop = ir_bbvec_createwa(L);
-  J->earlyexit = NULL;
-  J->lstate = NULL;
-  J->ci = NULL;
-  J->base = NULL;
-  J->regtable = regtab_createwa(16, L);
-  J->pc = tr->start - tr->p->code;
-  return J;
+/* Create an exit and add it to the state's vector. */
+static void addexit(JitState *J, IRBBlock *bb, int status) {
+  JitExit *e = luaM_new(J->L, JitExit);
+  e->bb = bb;
+  e->registers = regtab_clone(J->regtable);
+  e->status = status;
 }
 
-/* Destroy the jit state. */
-static void destroyjitstate(JitState *J) {
-  ir_destroy(J->irfunc);
-  ir_bbvec_destroy(J->entry);
-  ir_bbvec_destroy(J->loop);
-  regtab_foreach(J->regtable, _, reg, luaM_free(J->L, reg));
-  regtab_destroy(J->regtable);
-  luaM_free(J->L, J);
+/* Destroy an jit exit */
+static void destroyexit(JitState *J, JitExit *e) {
+  regtab_destroy(e->registers);
+  luaM_free(J->L, e);
 }
 
 /* Create a jit register and add it to the register's table. */
@@ -124,13 +125,36 @@ static JitRegister *createregister(JitState *J, int reg, IRValue *value,
   return r;
 }
 
+/* Create the jit state. */
+static JitState *createjitstate(lua_State *L, JitTrace *tr) {
+  JitState *J = luaM_new(L, JitState);
+  J->L = L;
+  J->tr = tr;
+  J->irfunc = ir_create(L);
+  J->preloop = J->loopstart = J->loopend = J->earlyexit = NULL;
+  J->exits = exvec_createwa(L);
+  J->lstate = J->base = NULL;
+  J->regtable = regtab_createwa(16, L);
+  J->pc = tr->start - tr->p->code;
+  return J;
+}
+
+/* Destroy the jit state. */
+static void destroyjitstate(JitState *J) {
+  ir_destroy(J->irfunc);
+  exvec_foreach(J->exits, e, destroyexit(J, e));
+  exvec_destroy(J->exits);
+  regtab_foreach(J->regtable, _, reg, luaM_free(J->L, reg));
+  regtab_destroy(J->regtable);
+  luaM_free(J->L, J);
+}
+
 /* Create the entry basic block.
  * This block should contain the loop invariants. */
 static void initentryblock(JitState *J) {
-  ir_bbvec_push(J->entry, ir_currbblock() = ir_addbblock());
+  ir_currbblock() = J->preloop = ir_addbblock();
   J->lstate = ir_getarg(IR_IPTR, 0);
-  J->ci = ir_getarg(IR_IPTR, 1);
-  J->base = ir_getarg(IR_IPTR, 2);
+  J->base = ir_getarg(IR_IPTR, 1);
 }
 
 /* Obtain the next instruction position. */
@@ -166,7 +190,7 @@ static enum IRBinOp convertbinop(int op) {
   return 0;
 }
 
-/* Obtain the address of a Lua stack value */
+/* Obtain the address of a Lua stack value. */
 static IRValue *gettvalueaddr(JitState *J, int regpos) {
   size_t offset = sizeof(TValue) * regpos;
   if (offset != 0)
@@ -176,28 +200,22 @@ static IRValue *gettvalueaddr(JitState *J, int regpos) {
 }
 
 /* Create a guard instruction that verifies if the type matches what is
- * expected. 
- * The stack should only be restored if the guard fail inside the loop. */
+ * expected. */
 static void guardtype(JitState *J, IRValue *type, int expectedtype,
-                      IRBBlockVector *bbs) {
-  IRBBlock *original = ir_currbblock();
-  IRBBlock *sideexit = NULL;
-  IRBBlock *continuation = ir_insertbblock(original);
-  ir_bbvec_push(bbs, continuation);
-  if (bbs == J->loop) {
-    /* TODO */
-    assert(0);
-  }
-  else {
-    if (!J->earlyexit) {
-      J->earlyexit = ir_currbblock() = ir_addbblock();
-      ir_return(ir_consti(1)); 
-    }
-    sideexit = J->earlyexit;
-  }
-  ir_currbblock() = original;
+                      IRBBlock *continuation, IRBBlock *sideexit) {
   ir_cmp(IR_NE, type, ir_consti(expectedtype), sideexit, continuation);
-  ir_currbblock() = continuation;
+}
+
+/* Verify if the type matches the expected inside the preloop block. */
+static void guarttypeinpreloop(JitState *J, IRValue *type, int expectedtype) {
+  IRBBlock *continuation = ir_insertbblock(J->preloop);
+  if (J->earlyexit == NULL) {
+    ir_currbblock() = J->earlyexit = ir_addbblock();
+    ir_return(ir_consti(1)); 
+  }
+  ir_currbblock() = J->preloop;
+  guardtype(J, type, expectedtype, continuation, J->earlyexit);
+  ir_currbblock() = J->preloop = continuation;
 }
 
 /* Load a register from the Lua stack and verify if it matches the expected
@@ -210,10 +228,10 @@ static IRValue *gettvaluer(JitState *J, int regpos, int expectedtype) {
      * stack in the entry block. */
     IRBBlock *oldcurrbblock = ir_currbblock();
     IRValue *type, *addr;
-    ir_currbblock() = ir_bbvec_back(J->entry);
+    ir_currbblock() = J->preloop;
     addr = gettvalueaddr(J, regpos);
     type = ir_loadfield(IR_INT, addr, TValue, tt_);
-    guardtype(J, type, expectedtype, J->entry);
+    guarttypeinpreloop(J, type, expectedtype);
     value = ir_loadfield(irtype, addr, TValue, value_);
     createregister(J, regpos, value, type, 1);
     ir_currbblock() = oldcurrbblock;
@@ -249,34 +267,31 @@ static IRValue *gettvalue(JitState *J, int pos, int expectedtype) {
 /* Add a phi at the begining of the loop basic block and replace the old value.
  */
 static IRValue *insertphivalue(JitState *J, IRValue *entryval) {
-  IRBBlock *loopstart = ir_bbvec_front(J->loop);
   IRBBlock *oldcurrbblock = ir_currbblock();
-  size_t to = 0, from = ir_valvec_size(loopstart->values);
-  ir_currbblock() = loopstart;
+  size_t to = 0, from = ir_valvec_size(J->loopstart->values);
+  ir_currbblock() = J->loopstart;
   IRValue *phi = ir_phi(entryval->type);
   /* find the last phi in the loop block */
-  ir_valvec_foreach(loopstart->values, v, {
+  ir_valvec_foreach(J->loopstart->values, v, {
     if (v->instr != IR_PHI)
       break;
     else
       to++;
   });
-  ir_move(loopstart, from, to);
-  ir_replacevalue(loopstart, entryval, phi);
+  ir_move(J->loopstart, from, to);
+  ir_replacevalue(J->loopstart, entryval, phi);
   ir_currbblock() = oldcurrbblock;
   return phi;
 }
 
 /* Create the phi nodes for the registers that have phi values. */
 static void linkphivalues(JitState *J) {
-  IRBBlock *entry = ir_bbvec_back(J->entry);
-  IRBBlock *loop = ir_bbvec_back(J->loop);
   regtab_foreach(J->regtable, _, r, {
     if (r->phivalue) {
-      ir_addphinode(r->phivalue, r->loadedvalue, entry);
-      ir_addphinode(r->phivalue, r->value, loop);
-      ir_addphinode(r->phitype, r->loadedtype, entry);
-      ir_addphinode(r->phitype, r->type, loop);
+      ir_addphinode(r->phivalue, r->loadedvalue, J->preloop);
+      ir_addphinode(r->phivalue, r->value, J->loopend);
+      ir_addphinode(r->phitype, r->loadedtype, J->preloop);
+      ir_addphinode(r->phitype, r->type, J->loopend);
     }
   });
 }
@@ -305,13 +320,14 @@ static void settvalue(JitState *J, int regpos, IRValue *type, IRValue *value) {
 /* Add the missing jumps in the basic blocks. */
 static void addjmps(JitState *J) {
   /* add a jmp from entry to loop block */
-  ir_currbblock() = ir_bbvec_back(J->entry);
-  ir_jmp(ir_bbvec_front(J->loop));
+  ir_currbblock() = J->preloop;
+  ir_jmp(J->loopstart);
   /* and a jmp from the loop end to the beginning */
-  ir_currbblock() = ir_bbvec_back(J->loop);
-  ir_jmp(ir_bbvec_front(J->loop));
+  ir_currbblock() = J->loopend;
+  ir_jmp(J->loopstart);
 }
 
+#if 0
 /* Store the registers back in the Lua stack. */
 static void fillloopexit(JitState *J) {
   /* TODO fix: save the latest value that the exit branch can reach */
@@ -328,6 +344,7 @@ static void fillloopexit(JitState *J) {
   });
   ir_return(ir_consti(0));
 }
+#endif
 
 /* Auxiliary macros for obtaining the Lua's tvalues. */
 #define getrkb(J, i, rt) gettvalue(J, GETARG_B(i), rt.binop.rb)
@@ -352,19 +369,17 @@ static void compilebytecode(JitState *J, int n) {
       break;
     }
     case OP_FORLOOP: {
-      /* TODO: remove unnecessary verifications for idx and limit */
       int ra = GETARG_A(i);
       int expectedtype = rt.forloop.type;
       IRValue *looptype, *idx, *limit, *step, *newidx;
-      IRBBlock *currloop = ir_bbvec_front(J->loop);
-      IRBBlock *keeplooping = ir_insertbblock(currloop);
-      IRBBlock *posstep = ir_insertbblock(currloop);
-      IRBBlock *negstep = ir_insertbblock(currloop);
-      J->loopexit = ir_addbblock();
-      ir_bbvec_push(J->loop, negstep);
-      ir_bbvec_push(J->loop, posstep);
-      ir_bbvec_push(J->loop, keeplooping);
+      IRBBlock *loop = J->loopend;
+      IRBBlock *keeplooping = ir_insertbblock(loop);
+      IRBBlock *posstep = ir_insertbblock(loop);
+      IRBBlock *negstep = ir_insertbblock(loop);
+      IRBBlock *loopexit = ir_addbblock();
+      addexit(J, loopexit, 0);
 
+      /* TODO: don't load/verify the type for limit and step */
       idx = gettvalue(J, ra, expectedtype);
       limit = gettvalue(J, ra + 1, expectedtype);
       step = gettvalue(J, ra + 2, expectedtype);
@@ -372,12 +387,12 @@ static void compilebytecode(JitState *J, int n) {
       ir_cmp(IR_LT, step, ir_consti(0), negstep, posstep);
 
       ir_currbblock() = negstep;
-      ir_cmp(IR_GT, newidx, limit, J->loopexit, keeplooping);
+      ir_cmp(IR_GT, newidx, limit, loopexit, keeplooping);
 
       ir_currbblock() = posstep;
-      ir_cmp(IR_GT, limit, newidx, J->loopexit, keeplooping);
+      ir_cmp(IR_GT, limit, newidx, loopexit, keeplooping);
 
-      ir_currbblock() = keeplooping;
+      ir_currbblock() = J->loopend = keeplooping;
       looptype = ir_consti(expectedtype);
       settvalue(J, ra, looptype, newidx); /* internal index */
       settvalue(J, ra + 3, looptype, newidx); /* external index */
@@ -411,12 +426,14 @@ void fljit_compile(JitTrace *tr) {
   initentryblock(J);
   if (tr->completeloop) {
     size_t i;
-    ir_bbvec_push(J->loop, ir_currbblock() = ir_addbblock());
+    ir_currbblock() = J->loopstart = J->loopend = ir_addbblock();
     for (i = 0; i < tr->n; ++i)
       compilebytecode(J, i);
     addjmps(J);
     linkphivalues(J);
+#if 0
     fillloopexit(J);
+#endif
   } else {
     assert(0);
   }

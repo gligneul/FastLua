@@ -199,20 +199,27 @@
 #define TSCC_HASH_LOAD 0.6
 #endif
 
+/* GNU C extension used to detect the pointer size. */
+#if __SIZEOF_POINTER__ && __SIZEOF_POINTER__ == 4
+#define TSCC_ENABLE_32BITS
+#endif
+
+/* FNV constants. */
+#ifdef TSCC_ENABLE_32BITS
+#define TSCC_FNV_OFFSET 0x811c9dc5
+#define TSCC_FNV_PRIME 0x01000193
+#else
+#define TSCC_FNV_OFFSET 0xcbf29ce484222325
+#define TSCC_FNV_PRIME 0x00000100000001b3
+#endif
+
 /* FNV-1a hash function for strings. */
 static __inline size_t tscc_str_hashfunc(const char *str) {
-#ifdef TSCC_ENABLE_32BITS
-  size_t fnv_offset_basis = 0x811c9dc5;
-  size_t fnv_prime = 0x01000193;
-#else
-  size_t fnv_offset_basis = 0xcbf29ce484222325;
-  size_t fnv_prime = 0x00000100000001b3;
-#endif
   if (str != NULL) {
-    size_t i, hash = fnv_offset_basis;
+    size_t i, hash = TSCC_FNV_OFFSET;
     for (i = 0; str[i] != '\0'; ++i) {
       hash ^= str[i];
-      hash *= fnv_prime;
+      hash *= TSCC_FNV_PRIME;
     }
     return hash;
   } else {
@@ -220,27 +227,25 @@ static __inline size_t tscc_str_hashfunc(const char *str) {
   }
 }
 
-/*
- * Declares a general hash function that converts the type to a string and use
- * the FNV-1a hash function.
- */
+/* Declare a general hash function and use the FNV-1a hash function. */
 #define TSCC_DECL_GENERAL_HASHFUNC(T, prefix)                                  \
   static __inline size_t prefix##hashfunc(T value) {                           \
-    char mem[sizeof(value) + 1] = {'\0'};                                      \
+    char mem[sizeof(value)];                                                   \
+    size_t i, hash = TSCC_FNV_OFFSET;                                          \
     memcpy(mem, &value, sizeof(value));                                        \
-    return tscc_str_hashfunc(mem);                                             \
+    for (i = 0; i < sizeof(T); ++i) {                                          \
+      hash ^= mem[i];                                                          \
+      hash *= TSCC_FNV_PRIME;                                                  \
+    }                                                                          \
+    return hash;                                                               \
   }
 
-/*
- * Specific hash functions declarations.
- */
+/* Specific hash functions declarations. */
 TSCC_DECL_GENERAL_HASHFUNC(long int, tscc_int_)
 TSCC_DECL_GENERAL_HASHFUNC(double, tscc_float_)
 TSCC_DECL_GENERAL_HASHFUNC(void *, tscc_ptr_)
 
-/*
- * Hash compare function for strings.
- */
+/* Hash compare function for strings. */
 static __inline int tscc_str_compare(const char *a, const char *b) {
   if (!a || !b) {
     if (a || b)
@@ -252,9 +257,7 @@ static __inline int tscc_str_compare(const char *a, const char *b) {
   }
 }
 
-/*
- * Hash compare function for primitive types
- */
+/* Hash compare function for primitive types */
 #define tscc_general_compare(a, b) ((a) == (b))
 
 
@@ -273,6 +276,7 @@ static __inline int tscc_str_compare(const char *a, const char *b) {
   HashTable *pref##createwa(size_t nelements, AllocatorType allocator);        \
   void pref##destroy(HashTable *h);                                            \
   void pref##clear(HashTable *h);                                              \
+  HashTable *pref##clone(HashTable* h);                                        \
   int pref##empty(HashTable *h);                                               \
   size_t pref##size(HashTable *h);                                             \
   size_t pref##maxsize(HashTable *h);                                          \
@@ -421,6 +425,17 @@ static __inline int tscc_str_compare(const char *a, const char *b) {
       return;                                                                  \
     pref##destroybuffers(h);                                                   \
     (void)realloc_function(h->allocator, h, sizeof(HashTable), 0);             \
+  }                                                                            \
+                                                                               \
+  HashTable *pref##clone(HashTable *h) {                                       \
+    size_t i;                                                                  \
+    HashTable *newtable;                                                       \
+    tscc_assert(h, "null hash table");                                         \
+    newtable = pref##createwa(pref##maxsize(h), h->allocator);                 \
+    for (i = 0; i < h->capacity; ++i)                                          \
+      if (pref##getusedpos(h, i))                                              \
+        pref##insert(newtable, h->keys[i], h->values[i]);                      \
+    return newtable;                                                           \
   }                                                                            \
                                                                                \
   void pref##clear(HashTable *h) {                                             \
