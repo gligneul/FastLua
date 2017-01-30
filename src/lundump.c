@@ -23,7 +23,9 @@
 #include "lundump.h"
 #include "lzio.h"
 
-#include "fl_prof.h"
+#ifdef FL_ENABLE
+#include "fl_defs.h"
+#endif
 
 
 #if !defined(luai_verifycode)
@@ -215,7 +217,9 @@ static void LoadFunction (LoadState *S, Proto *f, TString *psource) {
   LoadUpvalues(S, f);
   LoadProtos(S, f);
   LoadDebug(S, f);
-  flprof_initproto(S->L, f);
+#ifdef FL_ENABLE
+  fl_initproto(S->L, f);
+#endif
 }
 
 

@@ -22,39 +22,29 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
-
 #include "lprefix.h"
-#include "lobject.h"
-#include "lstate.h"
+#include "lopcodes.h"
 
 #include "fl_instr.h"
-#include "fl_prof.h"
-#include "fl_rec.h"
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
-
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
-}
-
-void flprof_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
-  assert(loopcount > 0);
-  if (!flrec_isrecording(L)) {
-    Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    assert(*count < FL_JIT_THRESHOLD);
-    *count += loopcount;
-    if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
-      flrec_start(L);
-    }
+void fli_reset(Instruction *i) {
+  switch (GET_OPCODE(*i)) {
+    case OP_FORPREP_PROF:   SET_OPCODE(*i, OP_FORPREP); break;
+    case OP_FORLOOP_JIT:    SET_OPCODE(*i, OP_FORLOOP); break;
+    default: break;
   }
 }
 
+void fli_toprof(Instruction *i) {
+  switch (GET_OPCODE(*i)) {
+    case OP_FORPREP:    SET_OPCODE(*i, OP_FORPREP_PROF); break;
+    default: break;
+  }
+}
+
+void fli_tojit(Instruction *i) {
+  switch (GET_OPCODE(*i)) {
+    case OP_FORLOOP:    SET_OPCODE(*i, OP_FORLOOP_JIT); break;
+    default: break;
+  }
+}

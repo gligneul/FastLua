@@ -22,39 +22,30 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+/*
+ * Manipulate the instructions in Lua proto.
+ */
 
-#include "lprefix.h"
-#include "lobject.h"
-#include "lstate.h"
+#ifndef fl_instr_h
+#define fl_instr_h
 
-#include "fl_instr.h"
-#include "fl_prof.h"
-#include "fl_rec.h"
+#include "llimits.h"
+#include "lopcodes.h"
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
+/* Obtain the instruction index given the address. */
+#define fli_instrindex(p, addr) ((addr) - (p)->code)
 
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
-}
+/* Obtain the current instruction index. */
+#define fli_currentinstr(ci, p) fli_instrindex(p, ci->u.l.savedpc - 1)
 
-void flprof_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
-  assert(loopcount > 0);
-  if (!flrec_isrecording(L)) {
-    Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    assert(*count < FL_JIT_THRESHOLD);
-    *count += loopcount;
-    if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
-      flrec_start(L);
-    }
-  }
-}
+/* Convert the opcode back to the original one. */
+void fli_reset(Instruction *i);
+
+/* Convert the opcode to the profiling one. */
+void fli_toprof(Instruction *i);
+
+/* Convert the opcode to the jit one. */
+void fli_tojit(Instruction *i);
+
+#endif
 

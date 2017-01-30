@@ -22,39 +22,48 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+/*
+ * Compile a ir function into machine code.
+ */
 
-#include "lprefix.h"
-#include "lobject.h"
-#include "lstate.h"
+#ifndef fl_asm_h
+#define fl_asm_h
 
-#include "fl_instr.h"
-#include "fl_prof.h"
-#include "fl_rec.h"
+#include "fl_defs.h"
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
+struct IRFunction;
+struct lua_State;
+struct lua_TValue;
+struct Proto;
 
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
-}
+/* Jitted function prototype. */
+typedef int (*FLFunction)(struct lua_State *L, struct lua_TValue *base);
 
-void flprof_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
-  assert(loopcount > 0);
-  if (!flrec_isrecording(L)) {
-    Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    assert(*count < FL_JIT_THRESHOLD);
-    *count += loopcount;
-    if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
-      flrec_start(L);
-    }
-  }
-}
+/* Jitted function return codes */
+enum FLReturnCode {
+  FL_SUCCESS,
+  FL_EARLY_EXIT,
+  FL_SIDE_EXIT
+};
+
+/* Machine code function ready to be executed. */
+typedef struct AsmFunction {
+  FLFunction func;  /* compiled function */
+  void *buffer;     /* buffer for internal usage */
+} AsmFunction;
+
+/* Obtain the function given the instruction. */
+FLFunction flasm_getfunction(struct Proto *p, int pc);
+
+/* Compile a function and add it to the proto. */
+void flasm_compile(struct lua_State *L, struct Proto *p, int i,
+                   struct IRFunction *F);
+
+/* Delete a function and change the opcode to the default one. */
+void flasm_destroy(struct lua_State *L, struct Proto *p, int i);
+
+/* Destroy all asm functions in the proto. */
+void flasm_closeproto(struct lua_State *L, struct Proto *p);
+
+#endif
 

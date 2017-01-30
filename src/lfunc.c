@@ -20,6 +20,9 @@
 #include "lobject.h"
 #include "lstate.h"
 
+#ifdef FL_ENABLE
+#include "fl_defs.h"
+#endif
 
 
 CClosure *luaF_newCclosure (lua_State *L, int n) {
@@ -118,7 +121,6 @@ Proto *luaF_newproto (lua_State *L) {
   f->linedefined = 0;
   f->lastlinedefined = 0;
   f->source = NULL;
-  f->icount = NULL;
   return f;
 }
 
@@ -130,7 +132,9 @@ void luaF_freeproto (lua_State *L, Proto *f) {
   luaM_freearray(L, f->lineinfo, f->sizelineinfo);
   luaM_freearray(L, f->locvars, f->sizelocvars);
   luaM_freearray(L, f->upvalues, f->sizeupvalues);
-  luaM_freearray(L, f->icount, f->sizecode);
+#ifdef FL_ENABLE
+  fl_closeproto(L, f);
+#endif
   luaM_free(L, f);
 }
 

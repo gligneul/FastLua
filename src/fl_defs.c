@@ -22,39 +22,34 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "lprefix.h"
+#include "lmem.h"
 #include "lobject.h"
 #include "lstate.h"
 
-#include "fl_instr.h"
+#include "fl_asm.h"
+#include "fl_defs.h"
 #include "fl_prof.h"
-#include "fl_rec.h"
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
-
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
+void fl_initstate(struct lua_State *L) {
+  L->fl.trace = NULL;
 }
 
-void flprof_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
-  assert(loopcount > 0);
-  if (!flrec_isrecording(L)) {
-    Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    assert(*count < FL_JIT_THRESHOLD);
-    *count += loopcount;
-    if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
-      flrec_start(L);
-    }
-  }
+void fl_closestate(struct lua_State *L) {
+  (void)L;
+}
+
+void fl_initproto(struct lua_State *L, struct Proto *p) {
+  int n = p->sizecode;
+  p->fl.instr = luaM_newvector(L, n, union FLInstructionData);
+  memset(p->fl.instr, 0, n * sizeof(union FLInstructionData));
+  flprof_initopcodes(p->code, n);
+}
+
+void fl_closeproto(struct lua_State *L, struct Proto *p) {
+  flasm_closeproto(L, p);
+  luaM_freearray(L, p->fl.instr, p->sizecode);
 }
 

@@ -13,6 +13,10 @@
 #include "ltm.h"
 #include "lzio.h"
 
+#ifdef FL_ENABLE
+#include "fl_defs.h"
+#endif
+
 
 /*
 
@@ -31,7 +35,6 @@
 
 
 struct lua_longjmp;  /* defined in ldo.c */
-struct TraceRec; /* defined int fl_jit.h */
 
 
 /*
@@ -181,8 +184,7 @@ struct lua_State {
   unsigned short nCcalls;  /* number of nested C calls */
   l_signalT hookmask;
   lu_byte allowhook;
-  lu_byte jit_isrecording; /* jit recording flag; see fl_rec */
-  struct JitTrace *jit_tracerec;
+  struct FLState fl;
 };
 
 

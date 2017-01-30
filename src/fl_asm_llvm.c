@@ -22,39 +22,50 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
 #include <stdio.h>
-#include <string.h>
 
 #include "lprefix.h"
+#include "lmem.h"
 #include "lobject.h"
+#include "lopcodes.h"
 #include "lstate.h"
 
+#include "fl_asm.h"
+#include "fl_ir.h"
 #include "fl_instr.h"
-#include "fl_prof.h"
-#include "fl_rec.h"
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
+#define asmfunc(proto, i) (proto->fl.instr[i].asmfunc)
 
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
+static int funcmoc(struct lua_State *L, struct lua_TValue *base) {
+  (void)L;
+  (void)base;
+  printf("OI!\n");
+  return FL_EARLY_EXIT;
 }
 
-void flprof_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
-  assert(loopcount > 0);
-  if (!flrec_isrecording(L)) {
-    Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    assert(*count < FL_JIT_THRESHOLD);
-    *count += loopcount;
-    if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
-      flrec_start(L);
-    }
-  }
+FLFunction flasm_getfunction(struct Proto *p, int i) {
+  return asmfunc(p, i)->func;
+}
+
+void flasm_compile(struct lua_State *L, struct Proto *p, int i,
+                   struct IRFunction *F) {
+  AsmFunction *af = luaM_new(L, AsmFunction);
+  af->func = funcmoc;
+  af->buffer = F;
+  asmfunc(p, i) = af;
+  fli_tojit(&p->code[i]);
+}
+
+void flasm_destroy(struct lua_State *L, struct Proto *p, int i) {
+  luaM_free(L, asmfunc(p, i));
+  asmfunc(p, i) = NULL;
+  fli_reset(&p->code[i]);
+}
+
+void flasm_closeproto(struct lua_State *L, struct Proto *p) {
+  int i;
+  for (i = 0; i < p->sizecode; ++i)
+    if (GET_OPCODE(p->code[i]) == OP_FORLOOP_JIT)
+      flasm_destroy(L, p, i);
 }
 

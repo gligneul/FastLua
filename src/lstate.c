@@ -27,7 +27,9 @@
 #include "ltable.h"
 #include "ltm.h"
 
-#include "fl_rec.h"
+#ifdef FL_ENABLE
+#include "fl_defs.h"
+#endif
 
 
 #if !defined(LUAI_GCPAUSE)
@@ -238,13 +240,17 @@ static void preinit_thread (lua_State *L, global_State *g) {
   L->nny = 1;
   L->status = LUA_OK;
   L->errfunc = 0;
-  L->jit_isrecording = 0;
-  L->jit_tracerec = NULL;
+#ifdef FL_ENABLE
+  fl_initstate(L);
+#endif
 }
 
 
 static void close_state (lua_State *L) {
   global_State *g = G(L);
+#ifdef FL_ENABLE
+  fl_closestate(L);
+#endif
   luaF_close(L, L->stack);  /* close all upvalues for this thread */
   luaC_freeallobjects(L);  /* collect all objects */
   if (g->version)  /* closing a fully built state? */

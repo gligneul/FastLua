@@ -59,13 +59,14 @@ LUAI_DDEF const char *const luaP_opnames[NUM_OPCODES+1] = {
   "RETURN",
   "FORLOOP",
   "FORPREP",
-  "FORPREP_PROF",
   "TFORCALL",
   "TFORLOOP",
   "SETLIST",
   "CLOSURE",
   "VARARG",
   "EXTRAARG",
+  "FORPREP_PROF",
+  "FORLOOP_JIT",
   NULL
 };
 

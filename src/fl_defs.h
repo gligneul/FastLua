@@ -22,39 +22,47 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+/*
+ * FastLua global definitions.
+ */
 
-#include "lprefix.h"
-#include "lobject.h"
-#include "lstate.h"
+#ifndef fl_defs_h
+#define fl_defs_h
 
-#include "fl_instr.h"
-#include "fl_prof.h"
-#include "fl_rec.h"
+/* Foward declarations */
+struct lua_State;
+struct Proto;
+struct AsmFunction;
+struct JitTrace;
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
+/* Numbers of opcode executions required to record a trace. */
+#ifndef FL_JIT_THRESHOLD
+#define FL_JIT_THRESHOLD 50
+#endif
 
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
-}
+/* Global data that should be stored in lua_State. */
+struct FLState {
+  struct JitTrace *trace;       /* trace beeing recorded */
+};
 
-void flprof_profile(struct lua_State *L, CallInfo *ci, short loopcount) {
-  assert(loopcount > 0);
-  if (!flrec_isrecording(L)) {
-    Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    assert(*count < FL_JIT_THRESHOLD);
-    *count += loopcount;
-    if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
-      flrec_start(L);
-    }
-  }
-}
+/* Jit information about each instruction in a function. */
+union FLInstructionData {
+  int count;                    /* number of times executed; used in prof */
+  struct AsmFunction *asmfunc;  /* compiled function; used for execution */
+};
+
+/* Data that should be stored in lua Proto. */
+struct FLProto {
+  union FLInstructionData *instr;
+};
+
+/* Init/destroy FastLua state. */
+void fl_initstate(struct lua_State *L);
+void fl_closestate(struct lua_State *L);
+
+/* Init/destroy FastLua proto. */
+void fl_initproto(struct lua_State *L, struct Proto *p);
+void fl_closeproto(struct lua_State *L, struct Proto *p);
+
+#endif
 

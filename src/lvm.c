@@ -30,8 +30,12 @@
 #include "ltm.h"
 #include "lvm.h"
 
+#ifdef FL_ENABLE
+#include "fl_asm.h"
+#include "fl_instr.h"
 #include "fl_prof.h"
 #include "fl_rec.h"
+#endif
 
 
 /* limit for table tag-method chains (to avoid loops) */
@@ -801,7 +805,9 @@ void luaV_execute (lua_State *L) {
   for (;;) {
     Instruction i;
     StkId ra;
+#if FL_ENABLE
     flrec_record(L, ci);
+#endif
     vmfetch();
     vmdispatch (GET_OPCODE(i)) {
       vmcase(OP_MOVE) {
@@ -1192,6 +1198,7 @@ void luaV_execute (lua_State *L) {
         }
       }
       vmcase(OP_FORLOOP) {
+       l_forloop:
         if (ttisinteger(ra)) {  /* integer loop? */
           lua_Integer step = ivalue(ra + 2);
           lua_Integer idx = intop(+, ivalue(ra), step); /* increment index */
@@ -1215,6 +1222,7 @@ void luaV_execute (lua_State *L) {
         }
         vmbreak;
       }
+#if FL_ENABLE
       vmcase(OP_FORPREP_PROF) {
         TValue *init = ra;
         TValue *plimit = ra + 1;
@@ -1257,6 +1265,28 @@ void luaV_execute (lua_State *L) {
         ci->u.l.savedpc += GETARG_sBx(i);
         vmbreak;
       }
+      vmcase(OP_FORLOOP_JIT) {
+        Proto *p = cl->p;
+        int instr = fli_currentinstr(ci, p);
+        FLFunction f = flasm_getfunction(p, instr);
+        switch (f(L, base)) {
+          case FL_SUCCESS:
+            break;
+          case FL_EARLY_EXIT:
+            flasm_destroy(L, p, instr);
+            goto l_forloop;
+            break;
+          case FL_SIDE_EXIT:
+            flasm_destroy(L, p, instr);
+            lua_assert(0);
+            break;
+          default:
+            lua_assert(0);
+            break;
+        }
+        vmbreak;
+      }
+#endif
       vmcase(OP_FORPREP) {
         TValue *init = ra;
         TValue *plimit = ra + 1;

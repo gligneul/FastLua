@@ -4,10 +4,10 @@
  * Copyright (c) 2016 Gabriel de Quadros Ligneul
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  * 
  * The above copyright notice and this permission notice shall be included in
@@ -17,9 +17,9 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include <assert.h>
@@ -34,7 +34,7 @@
 #include "fl_rec.h"
 #include "fl_jit.h"
 
-#define tracerec(L) (L->jit_tracerec)
+#define tracerec(L) (L->fl.trace)
 
 /* Some macros stolen from lvm */
 #define RA(i)	(base+GETARG_A(i))
@@ -73,14 +73,12 @@ static int creatert(CallInfo *ci, Instruction i, union JitRTInfo *rt) {
 void flrec_start(struct lua_State *L) {
   assert(!flrec_isrecording(L));
   assert(!tracerec(L));
-  flrec_isrecording(L) = 1;
   tracerec(L) = fljit_createtrace(L);
 }
 
 void flrec_stop(struct lua_State *L) {
   assert(flrec_isrecording(L));
   assert(tracerec(L));
-  flrec_isrecording(L) = 0;
   fljit_compile(tracerec(L));
   fljit_destroytrace(tracerec(L));
   tracerec(L) = NULL;
@@ -90,12 +88,12 @@ void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
   JitTrace *tr = tracerec(L);
   const Instruction *i = ci->u.l.savedpc;
   if (tr->start != i) {
+    union JitRTInfo rt;
     if (tr->start == NULL) {
       /* start the recording */
       tr->p = getproto(ci->func);
       tr->start = i;
     }
-    union JitRTInfo rt;
     if (creatert(ci, *i, &rt)) {
       fljit_rtvec_push(tr->rtinfo, rt);
       tr->n++;

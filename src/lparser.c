@@ -27,7 +27,9 @@
 #include "lstring.h"
 #include "ltable.h"
 
-#include "fl_prof.h"
+#ifdef FL_ENABLE
+#include "fl_defs.h"
+#endif
 
 
 
@@ -569,7 +571,9 @@ static void close_func (LexState *ls) {
   f->sizeupvalues = fs->nups;
   lua_assert(fs->bl == NULL);
   ls->fs = fs->prev;
-  flprof_initproto(L, f);
+#ifdef FL_ENABLE
+  fl_initproto(L, f);
+#endif
   luaC_checkGC(L);
 }
 

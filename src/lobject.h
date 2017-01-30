@@ -15,6 +15,10 @@
 #include "llimits.h"
 #include "lua.h"
 
+#ifdef FL_ENABLE
+#include "fl_defs.h"
+#endif
+
 
 /*
 ** Extra tags for non-values
@@ -426,7 +430,7 @@ typedef struct Proto {
   struct LClosure *cache;  /* last-created closure with this prototype */
   TString  *source;  /* used for debug information */
   GCObject *gclist;
-  short *icount; /* profiling data; see fl_prof.h */
+  struct FLProto fl;
 } Proto;
 
 
