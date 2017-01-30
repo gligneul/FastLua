@@ -24,6 +24,12 @@
 
 #include <stdio.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#include <llvm-c/Analysis.h>
+#include <llvm-c/Core.h>
+#pragma GCC diagnostic pop
+
 #include "lprefix.h"
 #include "lmem.h"
 #include "lobject.h"
@@ -34,31 +40,50 @@
 #include "fl_ir.h"
 #include "fl_instr.h"
 
-#define asmfunc(proto, i) (proto->fl.instr[i].asmfunc)
+#define asmdata(proto, i) (proto->fl.instr[i].asmdata)
 
-static int funcmoc(struct lua_State *L, struct lua_TValue *base) {
+struct AsmData {
+  AsmFunction func; /* compiled function */
+  void *buffer;     /* buffer for internal usage */
+};
+
+static int fakefunc(struct lua_State *L, struct lua_TValue *base) {
   (void)L;
   (void)base;
   printf("OI!\n");
   return FL_EARLY_EXIT;
 }
 
-FLFunction flasm_getfunction(struct Proto *p, int i) {
-  return asmfunc(p, i)->func;
+/* Compile the ir function and save it in the asm function. */
+static void compile(struct lua_State *L, IRFunction *F, AsmData *af) {
+  LLVMModuleRef module = LLVMModuleCreateWithName("monga-executable");
+  char *error = NULL;
+  LLVMVerifyModule(module, LLVMPrintMessageAction, &error);
+  LLVMDisposeMessage(error);
+
+  af->func = fakefunc;
+  af->buffer = NULL;
+
+  (void)L;
+  (void)F;
+  (void)af;
+}
+
+AsmFunction flasm_getfunction(struct Proto *p, int i) {
+  return asmdata(p, i)->func;
 }
 
 void flasm_compile(struct lua_State *L, struct Proto *p, int i,
                    struct IRFunction *F) {
-  AsmFunction *af = luaM_new(L, AsmFunction);
-  af->func = funcmoc;
-  af->buffer = F;
-  asmfunc(p, i) = af;
+  AsmData *af = luaM_new(L, AsmData);
+  compile(L, F, af);
+  asmdata(p, i) = af;
   fli_tojit(&p->code[i]);
 }
 
 void flasm_destroy(struct lua_State *L, struct Proto *p, int i) {
-  luaM_free(L, asmfunc(p, i));
-  asmfunc(p, i) = NULL;
+  luaM_free(L, asmdata(p, i));
+  asmdata(p, i) = NULL;
   fli_reset(&p->code[i]);
 }
 

@@ -21,6 +21,7 @@ CFLAGS= -O0 -g $(WARNINGS) -Werror -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= -lm $(SYSLIBS) $(MYLIBS)
 
+LD= g++
 AR= ar rcu
 RANLIB= ranlib
 RM= rm -f
@@ -29,9 +30,9 @@ SYSCFLAGS=
 SYSLDFLAGS=
 SYSLIBS=
 
-MYCFLAGS= -DFL_ENABLE
-MYLDFLAGS=
-MYLIBS=
+MYCFLAGS= -DFL_ENABLE -I`llvm-config --includedir`
+MYLDFLAGS= `llvm-config --ldflags`
+MYLIBS= `llvm-config --libs --system-libs`
 MYOBJS=fl_asm_llvm.o fl_defs.o fl_instr.o fl_ir.o fl_jit.o fl_prof.o fl_rec.o
 
 # == END OF USER SETTINGS -- NO NEED TO CHANGE ANYTHING BELOW THIS LINE =======
@@ -70,10 +71,10 @@ $(LUA_A): $(BASE_O)
 	$(RANLIB) $@
 
 $(LUA_T): $(LUA_O) $(LUA_A)
-	$(CC) -o $@ $(LDFLAGS) $(LUA_O) $(LUA_A) $(LIBS)
+	$(LD) -o $@ $(LDFLAGS) $(LUA_O) $(LUA_A) $(LIBS)
 
 $(LUAC_T): $(LUAC_O) $(LUA_A)
-	$(CC) -o $@ $(LDFLAGS) $(LUAC_O) $(LUA_A) $(LIBS)
+	$(LD) -o $@ $(LDFLAGS) $(LUAC_O) $(LUA_A) $(LIBS)
 
 clean:
 	$(RM) $(ALL_T) $(ALL_O)

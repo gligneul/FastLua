@@ -37,23 +37,20 @@ struct lua_TValue;
 struct Proto;
 
 /* Jitted function prototype. */
-typedef int (*FLFunction)(struct lua_State *L, struct lua_TValue *base);
+typedef int (*AsmFunction)(struct lua_State *L, struct lua_TValue *base);
 
 /* Jitted function return codes */
-enum FLReturnCode {
+enum AsmReturnCode {
   FL_SUCCESS,
   FL_EARLY_EXIT,
   FL_SIDE_EXIT
 };
 
-/* Machine code function ready to be executed. */
-typedef struct AsmFunction {
-  FLFunction func;  /* compiled function */
-  void *buffer;     /* buffer for internal usage */
-} AsmFunction;
+/* Opaque data that should be saved in the Lua proto. */
+typedef struct AsmData AsmData;
 
 /* Obtain the function given the instruction. */
-FLFunction flasm_getfunction(struct Proto *p, int pc);
+AsmFunction flasm_getfunction(struct Proto *p, int pc);
 
 /* Compile a function and add it to the proto. */
 void flasm_compile(struct lua_State *L, struct Proto *p, int i,

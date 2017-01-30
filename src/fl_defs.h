@@ -32,7 +32,7 @@
 /* Foward declarations */
 struct lua_State;
 struct Proto;
-struct AsmFunction;
+struct AsmData;
 struct JitTrace;
 
 /* Numbers of opcode executions required to record a trace. */
@@ -42,13 +42,13 @@ struct JitTrace;
 
 /* Global data that should be stored in lua_State. */
 struct FLState {
-  struct JitTrace *trace;       /* trace beeing recorded */
+  struct JitTrace *trace;   /* trace beeing recorded */
 };
 
 /* Jit information about each instruction in a function. */
 union FLInstructionData {
-  int count;                    /* number of times executed; used in prof */
-  struct AsmFunction *asmfunc;  /* compiled function; used for execution */
+  int count;                /* number of times executed; used in prof */
+  struct AsmData *asmdata;  /* compiled function; used for execution */
 };
 
 /* Data that should be stored in lua Proto. */

@@ -1268,7 +1268,7 @@ void luaV_execute (lua_State *L) {
       vmcase(OP_FORLOOP_JIT) {
         Proto *p = cl->p;
         int instr = fli_currentinstr(ci, p);
-        FLFunction f = flasm_getfunction(p, instr);
+        AsmFunction f = flasm_getfunction(p, instr);
         switch (f(L, base)) {
           case FL_SUCCESS:
             break;
