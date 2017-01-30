@@ -75,11 +75,6 @@ TSCC_DECL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, IRPhiNode *,
 #define ir_phivec_foreach(vec, val, _cmd) \
     TSCC_VECTOR_FOREACH(ir_phivec_, vec, IRPhiNode *, val, _cmd)
 
-TSCC_DECL_HASHTABLE_WA(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
-    struct lua_State *)
-TSCC_DECL_HASHTABLE_WA(IRValueTable, ir_valtab_, IRValue *, int,
-    struct lua_State *)
-
 /* Value types */
 enum IRType {
   IR_CHAR,
@@ -186,11 +181,21 @@ IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb);
 #define ir_insertbblock(prevbb) _ir_insertbblock(_irfunc, prevbb)
 
 /* Obtain the basic block in the position. */
-IRBBlock *_ir_getbblock(IRFunction *F, size_t pos);
-#define ir_getbblock(pos) (_ir_getbblock(_irfunc, pos))
+//#define ir_getbblock(pos) ir_bbvec_get(_irfunc->bblocks, pos)
 
 /* Access the current basic block. */
 #define ir_currbblock() (_irfunc->currbb)
+
+/* Get the number of basic blocks */
+#define _ir_nbblocks(F) (ir_bbvec_size(F->bblocks))
+#define ir_nbblocks() _ir_nbblocks(_irfunc)
+
+/* Get the total number of commands */
+size_t _ir_nvalues(IRFunction *F);
+#define ir_nvalues() _ir_nvalues(_irfunc)
+
+/* Iterates through the basic blocks */
+#define ir_foreach_bb(bb, _cmd) ir_bbvec_foreach(_irfunc->bblocks, bb, _cmd)
 
 /* Add a value to the current basic block and return it. */
 IRValue *_ir_consti(IRFunction *F, IRInt i);

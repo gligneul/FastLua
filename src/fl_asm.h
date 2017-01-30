@@ -47,7 +47,7 @@ enum AsmReturnCode {
 };
 
 /* Opaque data that should be saved in the Lua proto. */
-typedef struct AsmData AsmData;
+typedef struct AsmInstrData AsmInstrData;
 
 /* Obtain the function given the instruction. */
 AsmFunction flasm_getfunction(struct Proto *p, int pc);

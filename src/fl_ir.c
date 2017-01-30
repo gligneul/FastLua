@@ -39,8 +39,12 @@ TSCC_IMPL_VECTOR_WA(IRValueVector, ir_valvec_, IRValue *, struct lua_State *,
     luaM_realloc_)
 TSCC_IMPL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, IRPhiNode *,
     struct lua_State *, luaM_realloc_)
+TSCC_DECL_HASHTABLE_WA(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
+    struct lua_State *)
 TSCC_IMPL_HASHTABLE_WA(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
     tscc_ptr_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
+TSCC_DECL_HASHTABLE_WA(IRValueTable, ir_valtab_, IRValue *, int,
+    struct lua_State *)
 TSCC_IMPL_HASHTABLE_WA(IRValueTable, ir_valtab_, IRValue *, int,
     tscc_ptr_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
 
@@ -95,8 +99,12 @@ IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb) {
   return bb;
 }
 
-IRBBlock *_ir_getbblock(IRFunction *F, size_t pos) {
-  return ir_bbvec_get(F->bblocks, pos);
+size_t _ir_nvalues(IRFunction *F) {
+  size_t n = 0;
+  ir_bbvec_foreach(F->bblocks, bb, {
+    n += ir_valvec_size(bb->values);
+  });
+  return n;
 }
 
 /* Create a value in the current basic block. */
@@ -413,15 +421,9 @@ static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
   });
 }
 
-static size_t getnumberofvalues(IRFunction *F) {
-  size_t nvalues = 0;
-  ir_bbvec_foreach(F->bblocks, bb, nvalues++);
-  return nvalues;
-}
-
 void _ir_print(IRFunction *F) {
-  size_t nblocks = ir_bbvec_size(F->bblocks);
-  size_t nvalues = getnumberofvalues(F);
+  size_t nblocks = _ir_nbblocks(F);
+  size_t nvalues = _ir_nvalues(F);
   IRBBlockTable *bbindices = ir_bbtab_createwa(nblocks, F->L);
   IRValueTable *valindices = ir_valtab_createwa(nvalues, F->L);;
   fillindices(F, bbindices, valindices);
