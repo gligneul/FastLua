@@ -388,20 +388,20 @@ static void compilebytecode(JitState *J, int n) {
       IRBBlock *posstep = ir_insertbblock(loop);
       IRBBlock *negstep = ir_insertbblock(loop);
       IRBBlock *loopexit = addexit(J, 0);
-
+      /*----- currloop */
       /* TODO: don't load/verify the type for limit and step */
       idx = gettvalue(J, ra, expectedtype);
       limit = gettvalue(J, ra + 1, expectedtype);
       step = gettvalue(J, ra + 2, expectedtype);
       newidx = ir_binop(IR_ADD, idx, step);
       ir_cmp(IR_LT, step, ir_consti(0), negstep, posstep);
-
+      /*----- negstep */
       ir_currbblock() = negstep;
-      ir_cmp(IR_GT, newidx, limit, loopexit, keeplooping);
-
+      ir_cmp(IR_LE, limit, newidx, keeplooping, loopexit);
+      /*----- posstep */
       ir_currbblock() = posstep;
-      ir_cmp(IR_GT, limit, newidx, loopexit, keeplooping);
-
+      ir_cmp(IR_LE, newidx, limit, keeplooping, loopexit);
+      /*----- keeplooping */
       ir_currbblock() = J->loopend = keeplooping;
       looptype = ir_consti(expectedtype);
       settvalue(J, ra, looptype, newidx); /* internal index */
@@ -445,7 +445,9 @@ void fljit_compile(JitTrace *tr) {
   } else {
     assert(0);
   }
+  #if 0
   ir_print();
+  #endif
   flasm_compile(tr->L, tr->p, fli_instrindex(tr->p, tr->start), J->irfunc);
   destroyjitstate(J);
 }

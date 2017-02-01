@@ -41,6 +41,9 @@
 #include "fl_ir.h"
 #include "fl_instr.h"
 
+#define ASM_OK 0
+#define ASM_ERROR 1
+
 /* Containers */
 TSCC_DECL_HASHTABLE_WA(AsmBBlockTable, asm_bbtab_, IRBBlock *, LLVMBasicBlockRef,
     lua_State *)
@@ -155,7 +158,6 @@ static LLVMValueRef createllvmfunction(AsmState *A) {
 static void asmstateinit(AsmState *A, lua_State *L, IRFunction *irfunc) {
   A->L = L;
   A->irfunc = irfunc;
-  LLVMInitializeNativeTarget();
   A->module = LLVMModuleCreateWithName("fl.asm");
   A->func = createllvmfunction(A);
   A->builder = LLVMCreateBuilder();
@@ -165,7 +167,7 @@ static void asmstateinit(AsmState *A, lua_State *L, IRFunction *irfunc) {
 
 /* Destroy the state internal data. */
 static void asmstateclose(AsmState *A) {
-  /* TODO: delete llvm module */
+  LLVMDisposeModule(A->module);
   LLVMDisposeBuilder(A->builder);
   asm_bbtab_destroy(A->bbtable);
   asm_valtab_destroy(A->valtable);
@@ -259,6 +261,30 @@ static void compilevalue(AsmState *A, IRValue *v) {
   asm_valtab_insert(A->valtable, v, llvmval);
 }
 
+/* Link the phi values. */
+static void linkphivalues(AsmState *A) {
+  ir_foreach_bb(bb, {
+    ir_valvec_foreach(bb->values, v, {
+      if (v->instr == IR_PHI) {
+        size_t i = 0;
+        size_t n = ir_phivec_size(v->args.phi);
+        LLVMValueRef *incvalues = luaM_newvector(A->L, n, LLVMValueRef);
+        LLVMBasicBlockRef *incblocks =
+            luaM_newvector(A->L, n, LLVMBasicBlockRef);
+        LLVMValueRef llvmphi = getllvmvalue(A, v);
+        ir_phivec_foreach(v->args.phi, phinode, {
+          incvalues[i] = getllvmvalue(A, phinode->value);
+          incblocks[i] = getllvmbb(A, phinode->bblock);
+          i++;
+        });
+        LLVMAddIncoming(llvmphi, incvalues, incblocks, n);
+        luaM_freearray(A->L, incvalues, n);
+        luaM_freearray(A->L, incblocks, n);
+      }
+    });
+  });
+}
+
 /* Compile each basic block. */
 static void compilebblocks(AsmState *A) {
   ir_foreach_bb(bb, {
@@ -271,38 +297,53 @@ static void compilebblocks(AsmState *A) {
 }
 
 /* Verify if the LLVM module is correct. */
-static void verifymodule(AsmState *A) {
+static int verifymodule(AsmState *A) {
   char *error = NULL;
-  LLVMVerifyModule(A->module, LLVMPrintMessageAction, &error);
-  LLVMDisposeMessage(error);
-  LLVMDumpModule(A->module);
-#if 0
-#endif
-}
-
-static int fakefunc(lua_State *L, struct lua_TValue *v) {
-  (void)L;
-  (void)v;
-  return FL_EARLY_EXIT;
+  if (LLVMVerifyModule(A->module, LLVMReturnStatusAction, &error)) {
+    LLVMDisposeMessage(error);
+    LLVMDumpModule(A->module);
+    return ASM_ERROR;
+  }
+  return ASM_OK;
 }
 
 /* Save the function in the AsmInstrData. */
-static void savefunction(AsmState *A, AsmInstrData *instrdata) {
-  (void)A;
-  instrdata->func = fakefunc;
-  instrdata->ee = NULL;
+static int savefunction(AsmState *A, AsmInstrData *data) {
+  LLVMModuleRef outmodule;
+  char *error = NULL;
+  LLVMInitializeNativeTarget();
+  LLVMInitializeNativeAsmPrinter();
+  LLVMInitializeNativeAsmParser();
+  LLVMLinkInMCJIT();
+  if (LLVMCreateJITCompilerForModule(&data->ee, A->module, 2, &error)) {
+    fprintf(stderr, "LLVMCreateJITCompilerForModule error: %s\n", error);
+    return ASM_ERROR;
+  }
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wpedantic"
+  data->func = (AsmFunction)LLVMGetPointerToGlobal(data->ee, A->func);
+  #pragma GCC diagnostic pop
+  if (LLVMRemoveModule(data->ee, A->module, &outmodule, &error)) {
+    fprintf(stderr, "LLVMRemoveModule error: %s\n", error);
+    return ASM_ERROR;
+  }
+  return ASM_OK;
 }
 
 /* Compile the ir function and save it in the asm function. */
-static void compile(struct lua_State *L, IRFunction *F,
+static int compile(struct lua_State *L, IRFunction *F,
                     AsmInstrData *instrdata) {
+  int errcode;
   AsmState A;
   asmstateinit(&A, L, F);
   createbblocks(&A);
   compilebblocks(&A);
-  verifymodule(&A);
-  savefunction(&A, instrdata);
+  linkphivalues(&A);
+  errcode = verifymodule(&A);
+  if (errcode == ASM_OK)
+    errcode = savefunction(&A, instrdata);
   asmstateclose(&A);
+  return errcode;
 }
 
 /*
@@ -316,12 +357,19 @@ AsmFunction flasm_getfunction(struct Proto *p, int i) {
 void flasm_compile(struct lua_State *L, struct Proto *p, int i,
                    struct IRFunction *F) {
   asmdata(p, i) = luaM_new(L, AsmInstrData);
-  compile(L, F, asmdata(p, i));
+  asmdata(p, i)->ee = NULL;
+  asmdata(p, i)->func = NULL;
   fli_tojit(&p->code[i]);
+  if (compile(L, F, asmdata(p, i)) == ASM_ERROR) {
+    flasm_destroy(L, p, i);
+  }
 }
 
 void flasm_destroy(struct lua_State *L, struct Proto *p, int i) {
-  luaM_free(L, asmdata(p, i));
+  AsmInstrData *data = asmdata(p, i);
+  if (data->ee)
+    LLVMDisposeExecutionEngine(data->ee);
+  luaM_free(L, data);
   asmdata(p, i) = NULL;
   fli_reset(&p->code[i]);
 }

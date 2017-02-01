@@ -1269,6 +1269,24 @@ void luaV_execute (lua_State *L) {
         Proto *p = cl->p;
         int instr = fli_currentinstr(ci, p);
         AsmFunction f = flasm_getfunction(p, instr);
+
+        #if 0
+        StkId pos;
+        fprintf(stderr, "> printing lua stack...\n");
+        for (pos = base; pos != L->top; ++pos) {
+          size_t len;
+          const char *s;
+          TValue val = *pos;
+          luaO_tostring(L, &val);
+          fprintf(stderr, "%p: ", (void*)pos);
+          len = vslen(&val);
+          s = svalue(&val);
+          fwrite(s, sizeof(char), len, stderr);
+          fprintf(stderr, "\n");
+        }
+        fprintf(stderr, "> end\n");
+        #endif
+
         switch (f(L, base)) {
           case FL_SUCCESS:
             break;
@@ -1284,6 +1302,7 @@ void luaV_execute (lua_State *L) {
             lua_assert(0);
             break;
         }
+
         vmbreak;
       }
 #endif
