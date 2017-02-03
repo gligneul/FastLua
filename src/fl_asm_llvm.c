@@ -41,8 +41,11 @@
 #include "fl_ir.h"
 #include "fl_instr.h"
 
-#define ASM_OK 0
-#define ASM_ERROR 1
+/* Optimization level set in LLVM. */
+#define ASM_OPT_LEVEL 2
+
+/* Access the asmdata inside the proto. */
+#define asmdata(proto, i) (proto->fl.instr[i].asmdata)
 
 /* Containers */
 TSCC_DECL_HASHTABLE_WA(AsmBBlockTable, asm_bbtab_, IRBBlock *, LLVMBasicBlockRef,
@@ -55,8 +58,11 @@ TSCC_DECL_HASHTABLE_WA(AsmValueTable, asm_valtab_, IRValue *, LLVMValueRef,
 TSCC_IMPL_HASHTABLE_WA(AsmValueTable, asm_valtab_, IRValue *, LLVMValueRef,
     tscc_ptr_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
 
-/* Access the asmdata inside the proto. */
-#define asmdata(proto, i) (proto->fl.instr[i].asmdata)
+/* Return code for functions that may fail. */
+enum AsmRetCode {
+  ASM_OK,
+  ASM_ERROR
+};
 
 /* Data saved in Lua proto. */
 struct AsmInstrData {
@@ -72,7 +78,7 @@ typedef struct AsmState {
   LLVMValueRef func;                /* LLVM function */
   LLVMBuilderRef builder;           /* LLVM builder */
   AsmBBlockTable *bbtable;          /* map a IR bb to a LLVM bb */
-  AsmValueTable *valtable;        /* map a IR bb to a LLVM bb */
+  AsmValueTable *valtable;          /* map a IR bb to a LLVM bb */
 } AsmState;
 
 /* IR define trick. */
@@ -315,7 +321,8 @@ static int savefunction(AsmState *A, AsmInstrData *data) {
   LLVMInitializeNativeAsmPrinter();
   LLVMInitializeNativeAsmParser();
   LLVMLinkInMCJIT();
-  if (LLVMCreateJITCompilerForModule(&data->ee, A->module, 2, &error)) {
+  if (LLVMCreateJITCompilerForModule(&data->ee, A->module, ASM_OPT_LEVEL,
+                                     &error)) {
     fprintf(stderr, "LLVMCreateJITCompilerForModule error: %s\n", error);
     return ASM_ERROR;
   }

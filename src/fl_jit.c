@@ -220,7 +220,8 @@ static int loadedfromstack(JitState *J, int regpos) {
 
 /* Load a register from the Lua stack and verify if it matches the expected
  * type. Registers are loaded in the entry block. */
-static IRValue *getregister(JitState *J, int regpos, int expectedtype) {
+static IRValue *getregister(JitState *J, int regpos, int expectedtype,
+                            int verifytype) {
   struct JitRegister *curr = J->current + regpos;
   enum IRType irtype = converttype(expectedtype);
   if (!registerhasinfo(J, regpos)) {
@@ -230,8 +231,10 @@ static IRValue *getregister(JitState *J, int regpos, int expectedtype) {
     IRValue *addr;
     ir_currbblock() = J->preloop;
     addr = registeraddr(J, regpos);
-    curr->type = ir_loadfield(IR_INT, addr, TValue, tt_);
-    guarttypeinpreloop(J, curr->type, expectedtype);
+    if (verifytype) {
+      curr->type = ir_loadfield(IR_INT, addr, TValue, tt_);
+      guarttypeinpreloop(J, curr->type, expectedtype);
+    }
     curr->value = ir_loadfield(irtype, addr, TValue, value_);
     J->loaded[regpos] = *curr;
     ir_currbblock() = oldcurrbblock;
@@ -255,11 +258,12 @@ static IRValue *getconst(JitState *J, int kpos, int expectedtype) {
 }
 
 /* Load a constant or register given the position. */
-static IRValue *gettvalue(JitState *J, int pos, int expectedtype) {
+static IRValue *gettvalue(JitState *J, int pos, int expectedtype,
+                          int verifytype) {
   if (ISK(pos))
     return getconst(J, INDEXK(pos), expectedtype);
   else
-    return getregister(J, pos, expectedtype);
+    return getregister(J, pos, expectedtype, verifytype);
 }
 
 /* Store a Lua stack register */
@@ -358,8 +362,8 @@ static void closeexit(JitState *J, JitExit *e) {
 }
 
 /* Auxiliary macros for obtaining the Lua's tvalues. */
-#define getrkb(J, i, rt) gettvalue(J, GETARG_B(i), rt.binop.rb)
-#define getrkc(J, i, rt) gettvalue(J, GETARG_C(i), rt.binop.rc)
+#define getrkb(J, i, rt) gettvalue(J, GETARG_B(i), rt.binop.rb, 1)
+#define getrkc(J, i, rt) gettvalue(J, GETARG_C(i), rt.binop.rc, 1)
 
 /*
  * Compiles a single bytecode, given the J->pc.
@@ -389,10 +393,9 @@ static void compilebytecode(JitState *J, int n) {
       IRBBlock *negstep = ir_insertbblock(loop);
       IRBBlock *loopexit = addexit(J, 0);
       /*----- currloop */
-      /* TODO: don't load/verify the type for limit and step */
-      idx = gettvalue(J, ra, expectedtype);
-      limit = gettvalue(J, ra + 1, expectedtype);
-      step = gettvalue(J, ra + 2, expectedtype);
+      idx = gettvalue(J, ra, expectedtype, 1);
+      limit = gettvalue(J, ra + 1, expectedtype, 0);
+      step = gettvalue(J, ra + 2, expectedtype, 0);
       newidx = ir_binop(IR_ADD, idx, step);
       ir_cmp(IR_LT, step, ir_consti(0), negstep, posstep);
       /*----- negstep */
@@ -445,7 +448,7 @@ void fljit_compile(JitTrace *tr) {
   } else {
     assert(0);
   }
-  #if 0
+  #if 1
   ir_print();
   #endif
   flasm_compile(tr->L, tr->p, fli_instrindex(tr->p, tr->start), J->irfunc);
