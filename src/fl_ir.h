@@ -81,7 +81,8 @@ enum IRType {
   IR_SHORT,
   IR_INT,
   IR_LUAINT,
-  IR_IPTR,
+  IR_LONG,
+  IR_PTR,
   IR_FLOAT,
   IR_VOID
 };
@@ -120,16 +121,17 @@ enum IRCmpOp {
 /* union IRConstant
  * Constants are either integers/pointers or float numbers. */
 union IRConstant {
-  IRFloat f;        /* float */
-  IRInt i;          /* int/pointers */
+  IRFloat f;                        /* float */
+  IRInt i;                          /* integers */
+  void *p;                          /* pointers */
 };
 
 /* IRFunction
  * Root structure of the module. */
 struct IRFunction {
-  struct lua_State *L;      /* lua state */
-  IRBBlock *currbb;         /* current basic block */
-  IRBBlockVector *bblocks;  /* list of basic blocks */
+  struct lua_State *L;              /* lua state */
+  IRBBlock *currbb;                 /* current basic block */
+  IRBBlockVector *bblocks;          /* list of basic blocks */
 };
 
 /* IRBBlock
@@ -141,14 +143,14 @@ struct IRBBlock {
 /* IRValue
  * Contains the instruction that generates it. */
 struct IRValue {
-  enum IRType type;             /* value type */
-  enum IRInstruction instr;     /* instruction */
-  IRBBlock *bblock;             /* parent basic block */
-  union {                       /* instruction arguments */
+  enum IRType type;                 /* value type */
+  enum IRInstruction instr;         /* instruction */
+  IRBBlock *bblock;                 /* parent basic block */
+  union {                           /* instruction arguments */
     union IRConstant konst;
     struct { int n; } getarg;
-    struct { IRValue *mem; enum IRType type; } load;
-    struct { IRValue *mem, *v; enum IRType type; } store;
+    struct { IRValue *mem; size_t offset; enum IRType type; } load;
+    struct { IRValue *mem, *v; size_t offset; enum IRType type; } store;
     struct { enum IRBinOp op; IRValue *l, *r; } binop;
     struct { enum IRCmpOp op; IRValue *l, *r;
              IRBBlock *truebr, *falsebr; } cmp;
@@ -170,7 +172,7 @@ IRFunction *ir_create(struct lua_State *L);
 void ir_destroy(IRFunction *F);
 
 /* Verify if a type is an integer. */
-#define ir_isintt(t) (t <= IR_IPTR)
+#define ir_isintt(t) (t <= IR_LONG)
 
 /* Create a basic block and returns it. */
 IRBBlock *_ir_addbblock(IRFunction *F);
@@ -201,9 +203,9 @@ size_t _ir_nvalues(IRFunction *F);
 IRValue *_ir_consti(IRFunction *F, IRInt i);
 IRValue *_ir_constf(IRFunction *F, IRFloat f);
 IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n);
-IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem);
+IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem, int offset);
 IRValue *_ir_store(IRFunction *F, enum IRType type, IRValue *mem,
-                   IRValue *val);
+                   IRValue *val, int offset);
 IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r);
 IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
                  IRBBlock *truebr, IRBBlock *falsebr);
@@ -213,8 +215,9 @@ IRValue *_ir_phi(IRFunction *F, enum IRType type);
 #define ir_consti(i) _ir_consti(_irfunc, i)
 #define ir_constf(f) _ir_constf(_irfunc, f)
 #define ir_getarg(type, n) _ir_getarg(_irfunc, type, n)
-#define ir_load(type, mem) _ir_load(_irfunc, type, mem)
-#define ir_store(type, mem, val) _ir_store(_irfunc, type, mem, val)
+#define ir_load(type, mem, offset) _ir_load(_irfunc, type, mem, offset)
+#define ir_store(type, mem, val, offset) \
+    _ir_store(_irfunc, type, mem, val, offset)
 #define ir_binop(op, l, r) _ir_binop(_irfunc, op, l, r)
 #define ir_cmp(op, l, r, truebr, falsebr) \
     _ir_cmp(_irfunc, op, l, r, truebr, falsebr)
@@ -236,19 +239,6 @@ void _ir_move(IRFunction *F, IRBBlock *bb, size_t from, size_t to);
 void _ir_replacevalue(IRFunction *F, IRBBlock *b, IRValue *old, IRValue *new);
 #define ir_replacevalue(b, old, new) _ir_replacevalue(_irfunc, b, old, new)
 
-/* Obtains the address of a struct's field.  */
-#define _ir_getfieldaddr(F, ptr, strukt, field) \
-  (offsetof(strukt, field) == 0 ? ptr : \
-    _ir_binop(F, IR_ADD, ptr, _ir_consti(F, offsetof(strukt, field))))
-#define ir_getfieldaddr(ptr, strukt, field) \
-    _ir_getfieldaddr(_irfunc, ptr, strukt, field)
-
-/* Loads the field value. */
-#define _ir_loadfield(F, type, ptr, strukt, field) \
-  (_ir_load(F, type, _ir_getfieldaddr(F, ptr, strukt, field)))
-#define ir_loadfield(type, ptr, strukt, field) \
-    _ir_loadfield(_irfunc, type, ptr, strukt, field)
- 
 /* DEBUG: Prints the function */
 void _ir_print(IRFunction *F);
 #define ir_print() _ir_print(_irfunc)

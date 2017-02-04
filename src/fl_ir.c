@@ -120,7 +120,7 @@ static IRValue *createvalue(IRFunction *F, enum IRType type,
 }
 
 IRValue *_ir_consti(IRFunction *F, IRInt i) {
-  IRValue *v = createvalue(F, IR_IPTR, IR_CONST);
+  IRValue *v = createvalue(F, IR_LONG, IR_CONST);
   v->args.konst.i = i;
   return v;
 }
@@ -137,22 +137,26 @@ IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n) {
   return v;
 }
 
-IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem) {
+IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem,
+                  int offset) {
   /* promote integers to intptr */
-  enum IRType finaltype = ir_isintt(type) ? IR_IPTR : type;
+  enum IRType finaltype = ir_isintt(type) ? IR_LONG : type;
   IRValue *v = createvalue(F, finaltype, IR_LOAD);
   v->args.load.mem = mem;
+  v->args.load.offset = offset;
   v->args.load.type = type;
   return v;
 }
 
 IRValue *_ir_store(IRFunction *F, enum IRType type, IRValue *mem,
-                   IRValue *val) {
+                   IRValue *val, int offset) {
   IRValue *v = createvalue(F, IR_VOID, IR_STORE);
   v->args.store.mem = mem;
   v->args.store.v = val;
+  v->args.store.offset = offset;
   v->args.store.type = type;
-  assert(val->type == type || (val->type == IR_IPTR && ir_isintt(type)));
+  assert(val->type == type || (val->type == IR_LONG && ir_isintt(type)));
+  assert(mem->type == IR_PTR);
   return v;
 }
 
@@ -285,7 +289,8 @@ static void printtype(enum IRType type) {
     case IR_SHORT:  ir_log("short"); break;
     case IR_INT:    ir_log("int"); break;
     case IR_LUAINT: ir_log("luaint"); break;
-    case IR_IPTR:   ir_log("iptr"); break;
+    case IR_LONG:   ir_log("long"); break;
+    case IR_PTR:    ir_log("ptr"); break;
     case IR_FLOAT:  ir_log("luafloat"); break;
   }
 }
@@ -295,8 +300,9 @@ static void printconst(enum IRType type, union IRConstant k) {
   printtype(type);
   ir_log(" ");
   switch (type) {
-    case IR_IPTR: ir_log("%td", k.i); break;
-    case IR_FLOAT: ir_log("%f", k.f); break;
+    case IR_LONG:   ir_log("%td", k.i); break;
+    case IR_PTR:    ir_log("%p", k.p); break;
+    case IR_FLOAT:  ir_log("%f", k.f); break;
     default: assert(0); break;
   }
   ir_log(")");
@@ -347,31 +353,45 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
     case IR_CONST:
       /* do nothing */
       break;
-    case IR_GETARG:
+    case IR_GETARG: {
       ir_log("getarg %d", v->args.getarg.n);
       break;
-    case IR_LOAD:
+    }
+    case IR_LOAD: {
+      int offset = v->args.load.offset;
       ir_log("load ");
       printtype(v->args.load.type);
       ir_log(" ");
+      if (offset > 0)
+        ir_log("%d(", offset);
       printvalue(v->args.load.mem, valindices);
+      if (offset > 0)
+        ir_log(")");
       break;
-    case IR_STORE:
+    }
+    case IR_STORE: {
+      int offset = v->args.store.offset;
       ir_log("store ");
+      if (offset > 0)
+        ir_log("%d(", offset);
       printvalue(v->args.store.mem, valindices);
+      if (offset > 0)
+        ir_log(")");
       ir_log(" <- ");
       printtype(v->args.store.type);
       ir_log(" ");
       printvalue(v->args.store.v, valindices);
       break;
-    case IR_BINOP:
+    }
+    case IR_BINOP: {
       printbinop(v->args.binop.op);
       ir_log(" ");
       printvalue(v->args.binop.l, valindices);
       ir_log(" ");
       printvalue(v->args.binop.r, valindices);
       break;
-    case IR_CMP:
+    }
+    case IR_CMP: {
       ir_log("if ");
       printvalue(v->args.cmp.l, valindices);
       ir_log(" ");
@@ -383,14 +403,17 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
       ir_log(" else ");
       printbblock(v->args.cmp.falsebr, bbindices);
       break;
-    case IR_JMP:
+    }
+    case IR_JMP: {
       ir_log("jmp ");
       printbblock(v->args.jmp, bbindices);
       break;
-    case IR_RET:
+    }
+    case IR_RET: {
       ir_log("ret ");
       printvalue(v->args.ret.v, valindices);
       break;
+    }
     case IR_PHI: {
       size_t i, n = ir_phivec_size(v->args.phi);
       ir_log("phi [<");

@@ -22,6 +22,7 @@
  * IN THE SOFTWARE.
  */
 
+#include <assert.h>
 #include <stdio.h>
 
 #pragma GCC diagnostic push
@@ -98,7 +99,8 @@ static LLVMTypeRef converttype(enum IRType t) {
     case IR_SHORT:  return llvmintof(short);
     case IR_INT:    return llvmintof(int);
     case IR_LUAINT: return llvmintof(lua_Integer);
-    case IR_IPTR:   return llvmintof(void *);
+    case IR_LONG:   return llvmintof(void *);
+    case IR_PTR:    return llvmptr();
     case IR_FLOAT:  return llvmflt();
     case IR_VOID:   return LLVMVoidType();
   }
@@ -192,10 +194,12 @@ static void compilevalue(AsmState *A, IRValue *v) {
   LLVMValueRef llvmval = NULL;
   switch (v->instr) {
     case IR_CONST: {
-      if (v->type == IR_FLOAT)
-        llvmval = LLVMConstReal(llvmflt(), v->args.konst.f);
-      else /* v->type == IR_IPTR */
+      if (v->type == IR_LONG)
         llvmval = LLVMConstInt(llvmint(), v->args.konst.i, 1);
+      else if (v->type == IR_FLOAT)
+        llvmval = LLVMConstReal(llvmflt(), v->args.konst.f);
+      else
+        assert(0);
       break;
     }
     case IR_GETARG: {
@@ -206,8 +210,11 @@ static void compilevalue(AsmState *A, IRValue *v) {
       LLVMValueRef mem = getllvmvalue(A, v->args.load.mem);
       enum IRType irtype = v->args.load.type;
       LLVMTypeRef type = llvmptrof(converttype(irtype));
-      LLVMValueRef addr = LLVMBuildPointerCast(A->builder, mem, type, "");
-      llvmval = LLVMBuildLoad(A->builder, addr, "");
+      LLVMValueRef indices[] = {
+          LLVMConstInt(llvmint(), v->args.load.offset, 0) };
+      LLVMValueRef addr = LLVMBuildGEP(A->builder, mem, indices, 1, "");
+      LLVMValueRef ptr = LLVMBuildPointerCast(A->builder, addr, type, "");
+      llvmval = LLVMBuildLoad(A->builder, ptr, "");
       if (ir_isintt(irtype) && LLVMTypeOf(llvmval) != llvmint())
         llvmval = LLVMBuildIntCast(A->builder, llvmval, llvmint(), "");
       break;
@@ -217,24 +224,21 @@ static void compilevalue(AsmState *A, IRValue *v) {
       enum IRType irtype = v->args.store.type;
       LLVMTypeRef type = converttype(irtype);
       LLVMTypeRef ptrtype = llvmptrof(type);
-      LLVMValueRef addr = LLVMBuildPointerCast(A->builder, mem, ptrtype, "");
+      LLVMValueRef indices[] = {
+          LLVMConstInt(llvmint(), v->args.store.offset, 0) };
+      LLVMValueRef addr = LLVMBuildGEP(A->builder, mem, indices, 1, "");
+      LLVMValueRef ptr = LLVMBuildPointerCast(A->builder, addr, ptrtype, "");
       LLVMValueRef val = getllvmvalue(A, v->args.store.v);
       if (ir_isintt(irtype) && type != llvmint())
         val = LLVMBuildIntCast(A->builder, val, type, "");
-      llvmval = LLVMBuildStore(A->builder, val, addr);
+      llvmval = LLVMBuildStore(A->builder, val, ptr);
       break;
     }
     case IR_BINOP: {
       LLVMValueRef l = getllvmvalue(A, v->args.binop.l);
       LLVMValueRef r = getllvmvalue(A, v->args.binop.r);
-      if (LLVMTypeOf(l) == llvmptr()) {
-        LLVMValueRef indices[] = { r };
-        llvmval = LLVMBuildGEP(A->builder, l, indices, 1, "");
-      }
-      else {
-        LLVMOpcode op = convertbinop(v->args.binop.op, v->type);
-        llvmval = LLVMBuildBinOp(A->builder, op, l, r, "");
-      }
+      LLVMOpcode op = convertbinop(v->args.binop.op, v->type);
+      llvmval = LLVMBuildBinOp(A->builder, op, l, r, "");
       break;
     }
     case IR_CMP: {
