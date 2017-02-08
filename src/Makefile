@@ -7,17 +7,18 @@
 PLAT= linux
 
 WARNINGS= \
-	-Wall \
-	-Wextra \
-	-Wundef \
-	-Wshadow \
-	-Wcast-align \
-	-Wstrict-prototypes \
-	-Wmissing-prototypes \
-	-pedantic
+ -Wall \
+ -Wextra \
+ -Werror \
+ -Wundef \
+ -Wshadow \
+ -Wcast-align \
+ -Wstrict-prototypes \
+ -Wmissing-prototypes \
+ -pedantic
 
 CC= gcc -std=gnu99
-CFLAGS= -g -O0 $(WARNINGS) -Werror -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
+CFLAGS= -g -O0 $(WARNINGS) -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= -lm $(SYSLIBS) $(MYLIBS)
 
@@ -30,10 +31,18 @@ SYSCFLAGS=
 SYSLDFLAGS=
 SYSLIBS=
 
-MYCFLAGS= -DFL_ENABLE -I`llvm-config --includedir`
+MYCFLAGS= -DFL_ENABLE -DFL_LOGGER -I`llvm-config --includedir`
 MYLDFLAGS= `llvm-config --ldflags`
 MYLIBS= `llvm-config --libs --system-libs`
-MYOBJS=fl_asm_llvm.o fl_defs.o fl_instr.o fl_ir.o fl_jitc.o fl_prof.o fl_rec.o
+MYOBJS= \
+ fl_asm_llvm.o \
+ fl_defs.o \
+ fl_instr.o \
+ fl_ir.o \
+ fl_jitc.o \
+ fl_logger.o \
+ fl_prof.o \
+ fl_rec.o
 
 # == END OF USER SETTINGS -- NO NEED TO CHANGE ANYTHING BELOW THIS LINE =======
 
@@ -142,22 +151,25 @@ solaris:
 
 fl_asm_llvm.o: fl_asm_llvm.c \
  lprefix.h lmem.h llimits.h lua.h luaconf.h lobject.h fl_defs.h lopcodes.h \
- lstate.h ltm.h lzio.h fl_asm.h fl_ir.h fl_containers.h fl_instr.h
+ lstate.h ltm.h lzio.h fl_asm.h fl_ir.h fl_containers.h fl_logger.h fl_tscc.h \
+ fl_instr.h
 fl_defs.o: fl_defs.c lprefix.h lmem.h llimits.h lua.h luaconf.h lobject.h \
  fl_defs.h lstate.h ltm.h lzio.h fl_asm.h fl_prof.h
 fl_instr.o: fl_instr.c lprefix.h lopcodes.h llimits.h lua.h luaconf.h \
  fl_instr.h
-fl_ir.o: fl_ir.c lprefix.h lmem.h llimits.h lua.h luaconf.h fl_ir.h \
- fl_containers.h
+fl_ir.o: fl_ir.c lprefix.h lmem.h llimits.h lua.h luaconf.h fl_logger.h \
+ fl_ir.h fl_containers.h fl_tscc.h
 fl_jitc.o: fl_jitc.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
  lopcodes.h lstate.h lobject.h fl_defs.h ltm.h lzio.h fl_asm.h fl_instr.h \
- fl_ir.h fl_containers.h fl_jitc.h
+ fl_ir.h fl_containers.h fl_logger.h fl_tscc.h fl_jitc.h
+fl_logger.o: fl_logger.c lprefix.h lobject.h llimits.h lua.h luaconf.h \
+ fl_defs.h lstate.h ltm.h lzio.h lmem.h fl_logger.h
 fl_prof.o: fl_prof.c lprefix.h lobject.h llimits.h lua.h luaconf.h \
  fl_defs.h lstate.h ltm.h lzio.h lmem.h fl_instr.h lopcodes.h fl_prof.h \
  fl_rec.h
 fl_rec.o: fl_rec.c lprefix.h lobject.h llimits.h lua.h luaconf.h \
  fl_defs.h lopcodes.h lstate.h ltm.h lzio.h lmem.h fl_rec.h fl_jitc.h \
- fl_containers.h
+ fl_containers.h fl_logger.h fl_tscc.h
 lapi.o: lapi.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
  lobject.h fl_defs.h ltm.h lzio.h lmem.h ldebug.h ldo.h lfunc.h lgc.h \
  lstring.h ltable.h lundump.h lvm.h

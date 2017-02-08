@@ -23,39 +23,59 @@
  */
 
 #include <stdio.h>
-#include <string.h>
+
+#ifdef FL_LOGGER
 
 #include "lprefix.h"
 #include "lobject.h"
 #include "lstate.h"
 
-#include "fl_instr.h"
 #include "fl_logger.h"
-#include "fl_prof.h"
-#include "fl_rec.h"
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
+#define logstream stderr
 
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
+static int logger_enable = 1;
+
+void fllog(const char *format, ...) {
+  if (!logger_enable) return;
+  va_list args;
+  va_start(args, format);
+  vfprintf(logstream, format, args);
+  va_end(args);
 }
 
-void flprof_profile(struct lua_State *L, CallInfo *ci, int loopcount) {
-  fll_assert(loopcount > 0, "flprof_profile: loopcount <= 0");
-  if (!flrec_isrecording(L)) {
-    Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    fll_assert(*count < FL_JIT_THRESHOLD,
-               "flprof_profile: threshold already reached");
-    *count += loopcount;
-    if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
-      flrec_start(L);
-    }
+void fllogln(const char *format, ...) {
+  if (!logger_enable) return;
+  va_list args;
+  va_start(args, format);
+  vfprintf(logstream, format, args);
+  va_end(args);
+  fputs("\n", logstream);
+}
+
+void fll_enable(int enable) {
+  logger_enable = enable;
+}
+
+void fll_write(const void *buffer, size_t nbytes) {
+  if (!logger_enable) return;
+  fwrite(buffer, sizeof(char), nbytes, logstream);
+}
+
+void fll_dumpstack(lua_State *L) {
+  StkId pos;
+  for (pos = L->ci->u.l.base; pos != L->top; ++pos) {
+    size_t len;
+    const char *s;
+    TValue val = *pos;
+    luaO_tostring(L, &val);
+    fllog("%p: ", (void*)pos);
+    len = vslen(&val);
+    s = svalue(&val);
+    fll_write(s, len);
+    fllog("\n");
   }
 }
+
+#endif
 

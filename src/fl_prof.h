@@ -45,7 +45,7 @@ void flprof_initopcodes(Instruction *code, int n);
 
 /* General profiling step.
  * loopcount should be greater than 0. */
-void flprof_profile(struct lua_State *L, struct CallInfo *ci, short loopcount);
+void flprof_profile(struct lua_State *L, struct CallInfo *ci, int loopcount);
 
 #endif
 

@@ -22,14 +22,13 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 
 #include "lprefix.h"
-
 #include "lmem.h"
 
+#include "fl_logger.h"
 #include "fl_ir.h"
 
 /* Conteiners implementation */
@@ -155,8 +154,9 @@ IRValue *_ir_store(IRFunction *F, enum IRType type, IRValue *mem,
   v->args.store.v = val;
   v->args.store.offset = offset;
   v->args.store.type = type;
-  assert(val->type == type || (val->type == IR_LONG && ir_isintt(type)));
-  assert(mem->type == IR_PTR);
+  fll_assert(val->type == type || (val->type == IR_LONG && ir_isintt(type)),
+    "ir_store: type doesn't match");
+  fll_assert(mem->type == IR_PTR, "ir_store: mem ins't a pointer");
   return v;
 }
 
@@ -165,7 +165,7 @@ IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r) {
   v->args.binop.op = op;
   v->args.binop.l = l;
   v->args.binop.r = r;
-  assert(l->type == r->type);
+  fll_assert(l->type == r->type, "ir_binop: type mismatch");
   return v;
 }
 
@@ -177,7 +177,7 @@ IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
   v->args.cmp.r = r;
   v->args.cmp.truebr = truebr;
   v->args.cmp.falsebr = falsebr;
-  assert(l->type == r->type);
+  fll_assert(l->type == r->type, "ir_cmp: type mismatch");
   return v;
 }
 
@@ -205,8 +205,8 @@ void _ir_addphinode(IRFunction *F, IRValue *v, IRValue *value,
   phi->value = value;
   phi->bblock = bblock;
   ir_phivec_push(v->args.phi, phi);
-  assert(v->instr == IR_PHI);
-  assert(v->type == value->type);
+  fll_assert(v->instr == IR_PHI, "ir_addphinode: value ins't a phi");
+  fll_assert(v->type == value->type, "ir_addphinode: type mismatch");
 }
 
 void _ir_move(IRFunction *F, IRBBlock *bb, size_t from, size_t to) {
@@ -275,56 +275,49 @@ void _ir_replacevalue(IRFunction *F, IRBBlock *bb, IRValue *old, IRValue *new) {
  * Printing functions for debug
  */
 
-static void ir_log(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  vfprintf(stderr, format, args);
-  va_end(args);
-}
-
 static void printtype(enum IRType type) {
   switch (type) {
-    case IR_VOID:   ir_log("void"); break;
-    case IR_CHAR:   ir_log("char"); break;
-    case IR_SHORT:  ir_log("short"); break;
-    case IR_INT:    ir_log("int"); break;
-    case IR_LUAINT: ir_log("luaint"); break;
-    case IR_LONG:   ir_log("long"); break;
-    case IR_PTR:    ir_log("ptr"); break;
-    case IR_FLOAT:  ir_log("luafloat"); break;
+    case IR_VOID:   fllog("void"); break;
+    case IR_CHAR:   fllog("char"); break;
+    case IR_SHORT:  fllog("short"); break;
+    case IR_INT:    fllog("int"); break;
+    case IR_LUAINT: fllog("luaint"); break;
+    case IR_LONG:   fllog("long"); break;
+    case IR_PTR:    fllog("ptr"); break;
+    case IR_FLOAT:  fllog("luafloat"); break;
   }
 }
 
 static void printconst(enum IRType type, union IRConstant k) {
-  ir_log("(const ");
+  fllog("(const ");
   printtype(type);
-  ir_log(" ");
+  fllog(" ");
   switch (type) {
-    case IR_LONG:   ir_log("%td", k.i); break;
-    case IR_PTR:    ir_log("%p", k.p); break;
-    case IR_FLOAT:  ir_log("%f", k.f); break;
-    default: assert(0); break;
+    case IR_LONG:   fllog("%td", k.i); break;
+    case IR_PTR:    fllog("%p", k.p); break;
+    case IR_FLOAT:  fllog("%f", k.f); break;
+    default: fll_error("ir::printconst: invalid type"); break;
   }
-  ir_log(")");
+  fllog(")");
 }
 
 static void printbinop(enum IRBinOp op) {
   switch (op) {
-    case IR_ADD: ir_log("add"); break;
-    case IR_SUB: ir_log("sub"); break;
-    case IR_MUL: ir_log("mul"); break;
-    case IR_DIV: ir_log("div"); break;
+    case IR_ADD: fllog("add"); break;
+    case IR_SUB: fllog("sub"); break;
+    case IR_MUL: fllog("mul"); break;
+    case IR_DIV: fllog("div"); break;
   }
 }
 
 static void printcmpop(enum IRCmpOp op) {
   switch (op) {
-    case IR_NE: ir_log("!="); break;
-    case IR_EQ: ir_log("=="); break;
-    case IR_LE: ir_log("<="); break;
-    case IR_LT: ir_log("<"); break;
-    case IR_GE: ir_log(">="); break;
-    case IR_GT: ir_log(">"); break;
+    case IR_NE: fllog("!="); break;
+    case IR_EQ: fllog("=="); break;
+    case IR_LE: fllog("<="); break;
+    case IR_LT: fllog("<"); break;
+    case IR_GE: fllog(">="); break;
+    case IR_GT: fllog(">"); break;
   }
 }
 
@@ -332,104 +325,104 @@ static void printvalue(IRValue *v, IRValueTable *indices) {
   if (v->instr == IR_CONST)
     printconst(v->type, v->args.konst);
   else
-    ir_log("%%%d", ir_valtab_get(indices, v, -1));
+    fllog("%%%d", ir_valtab_get(indices, v, -1));
 }
 
 static void printbblock(IRBBlock *bb, IRBBlockTable *indices) {
-  ir_log("bb_%d", ir_bbtab_get(indices, bb, -1));
+  fllog("bb_%d", ir_bbtab_get(indices, bb, -1));
 }
 
 static void printinstr(IRValue *v, IRBBlockTable *bbindices,
                      IRValueTable *valindices) {
   if (v->instr == IR_CONST)
     return;
-  ir_log("  ");
+  fllog("  ");
   if (v->type != IR_VOID) {
     printvalue(v, valindices);
-    /* ir_log(" : "); printtype(v->type); */
-    ir_log(" = ");
+    /* fllog(" : "); printtype(v->type); */
+    fllog(" = ");
   }
   switch (v->instr) {
     case IR_CONST:
       /* do nothing */
       break;
     case IR_GETARG: {
-      ir_log("getarg %d", v->args.getarg.n);
+      fllog("getarg %d", v->args.getarg.n);
       break;
     }
     case IR_LOAD: {
       int offset = v->args.load.offset;
-      ir_log("load ");
+      fllog("load ");
       printtype(v->args.load.type);
-      ir_log(" ");
+      fllog(" ");
       if (offset > 0)
-        ir_log("%d(", offset);
+        fllog("%d(", offset);
       printvalue(v->args.load.mem, valindices);
       if (offset > 0)
-        ir_log(")");
+        fllog(")");
       break;
     }
     case IR_STORE: {
       int offset = v->args.store.offset;
-      ir_log("store ");
+      fllog("store ");
       if (offset > 0)
-        ir_log("%d(", offset);
+        fllog("%d(", offset);
       printvalue(v->args.store.mem, valindices);
       if (offset > 0)
-        ir_log(")");
-      ir_log(" <- ");
+        fllog(")");
+      fllog(" <- ");
       printtype(v->args.store.type);
-      ir_log(" ");
+      fllog(" ");
       printvalue(v->args.store.v, valindices);
       break;
     }
     case IR_BINOP: {
       printbinop(v->args.binop.op);
-      ir_log(" ");
+      fllog(" ");
       printvalue(v->args.binop.l, valindices);
-      ir_log(" ");
+      fllog(" ");
       printvalue(v->args.binop.r, valindices);
       break;
     }
     case IR_CMP: {
-      ir_log("if ");
+      fllog("if ");
       printvalue(v->args.cmp.l, valindices);
-      ir_log(" ");
+      fllog(" ");
       printcmpop(v->args.cmp.op);
-      ir_log(" ");
+      fllog(" ");
       printvalue(v->args.cmp.r, valindices);
-      ir_log(" then ");
+      fllog(" then ");
       printbblock(v->args.cmp.truebr, bbindices);
-      ir_log(" else ");
+      fllog(" else ");
       printbblock(v->args.cmp.falsebr, bbindices);
       break;
     }
     case IR_JMP: {
-      ir_log("jmp ");
+      fllog("jmp ");
       printbblock(v->args.jmp, bbindices);
       break;
     }
     case IR_RET: {
-      ir_log("ret ");
+      fllog("ret ");
       printvalue(v->args.ret.v, valindices);
       break;
     }
     case IR_PHI: {
       size_t i, n = ir_phivec_size(v->args.phi);
-      ir_log("phi [<");
+      fllog("phi [<");
       for (i = 0; i < n; ++i) {
         IRPhiNode *phi = ir_phivec_get(v->args.phi, i);
         printbblock(phi->bblock, bbindices);
-        ir_log(", ");
+        fllog(", ");
         printvalue(phi->value, valindices);
         if (i != n - 1)
-          ir_log(">, <");
+          fllog(">, <");
       }
-      ir_log(">]");
+      fllog(">]");
       break;
     }
   }
-  ir_log("\n");
+  fllog("\n");
 }
 
 static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
@@ -450,16 +443,16 @@ void _ir_print(IRFunction *F) {
   IRBBlockTable *bbindices = ir_bbtab_createwa(nblocks, F->L);
   IRValueTable *valindices = ir_valtab_createwa(nvalues, F->L);;
   fillindices(F, bbindices, valindices);
-  ir_log("IR function (%p)\n", (void *)F);
+  fllog("IR function (%p)\n", (void *)F);
   ir_bbvec_foreach(F->bblocks, bb, {
     printbblock(bb, bbindices);
-    ir_log(":\n");
+    fllog(":\n");
     ir_valvec_foreach(bb->values, v, {
       printinstr(v, bbindices, valindices);
     });
-    ir_log("\n");
+    fllog("\n");
   });
-  ir_log("\n");
+  fllog("\n");
   ir_bbtab_destroy(bbindices);
   ir_valtab_destroy(valindices);
 }

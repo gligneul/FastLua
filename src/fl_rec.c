@@ -22,17 +22,16 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
 #include <stdio.h>
 
 #include "lprefix.h"
-
 #include "lobject.h"
 #include "lopcodes.h"
 #include "lstate.h"
 
-#include "fl_rec.h"
 #include "fl_jitc.h"
+#include "fl_logger.h"
+#include "fl_rec.h"
 
 #define tracerec(L) (L->fl.trace)
 
@@ -71,14 +70,16 @@ static int creatert(CallInfo *ci, Instruction i, union JitRTInfo *rt) {
 }
 
 void flrec_start(struct lua_State *L) {
-  assert(!flrec_isrecording(L));
-  assert(!tracerec(L));
+  fll_assert(!flrec_isrecording(L), "flrec_start: already recording");
+  fll_assert(!tracerec(L), "flrec_start: already have an trace record");
+  fllogln("flrec_start: start recording (%p)", getproto(L->ci->func));
   tracerec(L) = fljit_createtrace(L);
 }
 
 void flrec_stop(struct lua_State *L) {
-  assert(flrec_isrecording(L));
-  assert(tracerec(L));
+  fll_assert(flrec_isrecording(L), "flrec_stop: not recording");
+  fll_assert(tracerec(L), "flrec_stop: trace record not found");
+  fllogln("flrec_stop: stop recording");
   fljit_compile(tracerec(L));
   fljit_destroytrace(tracerec(L));
   tracerec(L) = NULL;
@@ -89,6 +90,7 @@ void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
   const Instruction *i = ci->u.l.savedpc;
   if (tr->start != i) {
     union JitRTInfo rt;
+    fllogln("flrec_record_: recording opcode %s", luaP_opnames[GET_OPCODE(*i)]);
     if (tr->start == NULL) {
       /* start the recording */
       tr->p = getproto(ci->func);

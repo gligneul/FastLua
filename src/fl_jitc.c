@@ -22,7 +22,6 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
 #include <stdio.h>
 
 #include "lprefix.h"
@@ -34,6 +33,7 @@
 #include "fl_instr.h"
 #include "fl_ir.h"
 #include "fl_jitc.h"
+#include "fl_logger.h"
 
 /* Internal types */
 struct JitRegister;
@@ -162,7 +162,7 @@ static enum IRType converttype(int type) {
   switch (type) {
     case LUA_TNUMFLT: return IR_FLOAT;
     case LUA_TNUMINT: return IR_LUAINT;
-    default: assert(0); break;
+    default: fll_error("converttype: unhandled type"); break;
   }
   return 0;
 }
@@ -171,7 +171,7 @@ static enum IRType converttype(int type) {
 static enum IRBinOp convertbinop(int op) {
   switch (op) {
     case OP_ADD: return IR_ADD;
-    default: assert(0); break;
+    default: fll_error("convertbinop: unhandled binop"); break;
   }
   return 0;
 }
@@ -234,11 +234,11 @@ static IRValue *getregister(JitState *J, int regpos, int expectedtype,
 /* Load a constant from the constant table. */
 static IRValue *getconst(JitState *J, int kpos, int expectedtype) {
   TValue *k = J->tr->p->k + kpos;
-  assert(expectedtype == ttype(k));
+  fll_assert(expectedtype == ttype(k), "getconst: const type doesn't match");
   switch (expectedtype) {
     case LUA_TNUMFLT: return ir_constf(fltvalue(k));
     case LUA_TNUMINT: return ir_consti(ivalue(k));
-    default: assert(0); break;
+    default: fll_error("getconst: unhandled const type"); break;
   }
   return NULL;
 }
@@ -402,7 +402,7 @@ static void compilebytecode(JitState *J, int n) {
       break;
     }
     default:
-      assert(0);
+      fll_error("compilebytecode: unhandled opcode");
       break;
   }
   J->pc = getnextpc(J->pc, i);
@@ -425,22 +425,20 @@ void fljit_destroytrace(JitTrace *tr) {
 }
 
 void fljit_compile(JitTrace *tr) {
-  JitState *J = createjitstate(tr->L, tr);
+  JitState *J;
+  if (!tr->completeloop) return;
+  fllogln("fljit_compile: start compilation (%p)", tr->p);
+  J = createjitstate(tr->L, tr);
   initentryblock(J);
-  if (tr->completeloop) {
-    size_t i;
-    ir_currbblock() = J->loopstart = J->loopend = ir_addbblock();
-    for (i = 0; i < tr->n; ++i)
-      compilebytecode(J, i);
-    addjmps(J);
-    linkphivalues(J);
-    exvec_foreach(J->exits, e, closeexit(J, e));
-  } else {
-    assert(0);
-  }
-  #if 0
+  size_t i;
+  ir_currbblock() = J->loopstart = J->loopend = ir_addbblock();
+  for (i = 0; i < tr->n; ++i)
+    compilebytecode(J, i);
+  addjmps(J);
+  linkphivalues(J);
+  exvec_foreach(J->exits, e, closeexit(J, e));
   ir_print();
-  #endif
+  fllogln("fljit_compile: ended compilation");
   flasm_compile(tr->L, tr->p, fli_instrindex(tr->p, tr->start), J->irfunc);
   destroyjitstate(J);
 }

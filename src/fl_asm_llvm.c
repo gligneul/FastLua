@@ -22,7 +22,6 @@
  * IN THE SOFTWARE.
  */
 
-#include <assert.h>
 #include <stdio.h>
 
 #pragma GCC diagnostic push
@@ -41,6 +40,7 @@
 #include "fl_asm.h"
 #include "fl_ir.h"
 #include "fl_instr.h"
+#include "fl_logger.h"
 
 /* Optimization level set in LLVM. */
 #define ASM_OPT_LEVEL 2
@@ -194,12 +194,17 @@ static void compilevalue(AsmState *A, IRValue *v) {
   LLVMValueRef llvmval = NULL;
   switch (v->instr) {
     case IR_CONST: {
-      if (v->type == IR_LONG)
-        llvmval = LLVMConstInt(llvmint(), v->args.konst.i, 1);
-      else if (v->type == IR_FLOAT)
-        llvmval = LLVMConstReal(llvmflt(), v->args.konst.f);
-      else
-        assert(0);
+      switch (v->type) {
+        case IR_LONG:
+          llvmval = LLVMConstInt(llvmint(), v->args.konst.i, 1);
+          break;
+        case IR_FLOAT:
+          llvmval = LLVMConstReal(llvmflt(), v->args.konst.f);
+          break;
+        default:
+          fll_error("fl_asm::compilevalue: invalid constant type");
+          break;
+      }
       break;
     }
     case IR_GETARG: {
@@ -350,9 +355,8 @@ static int compile(struct lua_State *L, IRFunction *F,
   createbblocks(&A);
   compilebblocks(&A);
   linkphivalues(&A);
-  errcode = verifymodule(&A);
-  if (errcode == ASM_OK)
-    errcode = savefunction(&A, instrdata);
+  errcode = verifymodule(&A) ||
+            savefunction(&A, instrdata);
   asmstateclose(&A);
   return errcode;
 }
@@ -371,8 +375,13 @@ void flasm_compile(struct lua_State *L, struct Proto *p, int i,
   asmdata(p, i)->ee = NULL;
   asmdata(p, i)->func = NULL;
   fli_tojit(&p->code[i]);
+  fllogln("flasm_compile: starting compilation");
   if (compile(L, F, asmdata(p, i)) == ASM_ERROR) {
     flasm_destroy(L, p, i);
+    fllogln("flasm_compile: compilation falied");
+  }
+  else {
+    fllogln("flasm_compile: compilation succeed");
   }
 }
 
