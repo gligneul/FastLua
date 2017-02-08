@@ -32,7 +32,7 @@
 #include "lstate.h"
 
 #include "fl_rec.h"
-#include "fl_jit.h"
+#include "fl_jitc.h"
 
 #define tracerec(L) (L->fl.trace)
 

@@ -33,7 +33,7 @@ SYSLIBS=
 MYCFLAGS= -DFL_ENABLE -I`llvm-config --includedir`
 MYLDFLAGS= `llvm-config --ldflags`
 MYLIBS= `llvm-config --libs --system-libs`
-MYOBJS=fl_asm_llvm.o fl_defs.o fl_instr.o fl_ir.o fl_jit.o fl_prof.o fl_rec.o
+MYOBJS=fl_asm_llvm.o fl_defs.o fl_instr.o fl_ir.o fl_jitc.o fl_prof.o fl_rec.o
 
 # == END OF USER SETTINGS -- NO NEED TO CHANGE ANYTHING BELOW THIS LINE =======
 
@@ -140,23 +140,23 @@ solaris:
 
 # DO NOT DELETE
 
-fl_asm_llvm.o: fl_asm_llvm.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
- lobject.h fl_defs.h lopcodes.h lstate.h ltm.h lzio.h fl_asm.h fl_ir.h \
- fl_containers.h fl_instr.h
+fl_asm_llvm.o: fl_asm_llvm.c \
+ lprefix.h lmem.h llimits.h lua.h luaconf.h lobject.h fl_defs.h lopcodes.h \
+ lstate.h ltm.h lzio.h fl_asm.h fl_ir.h fl_containers.h fl_instr.h
 fl_defs.o: fl_defs.c lprefix.h lmem.h llimits.h lua.h luaconf.h lobject.h \
  fl_defs.h lstate.h ltm.h lzio.h fl_asm.h fl_prof.h
 fl_instr.o: fl_instr.c lprefix.h lopcodes.h llimits.h lua.h luaconf.h \
  fl_instr.h
 fl_ir.o: fl_ir.c lprefix.h lmem.h llimits.h lua.h luaconf.h fl_ir.h \
  fl_containers.h
-fl_jit.o: fl_jit.c lprefix.h lmem.h llimits.h lua.h luaconf.h lopcodes.h \
- lstate.h lobject.h fl_defs.h ltm.h lzio.h fl_asm.h fl_instr.h fl_ir.h \
- fl_containers.h fl_jit.h
+fl_jitc.o: fl_jitc.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
+ lopcodes.h lstate.h lobject.h fl_defs.h ltm.h lzio.h fl_asm.h fl_instr.h \
+ fl_ir.h fl_containers.h fl_jitc.h
 fl_prof.o: fl_prof.c lprefix.h lobject.h llimits.h lua.h luaconf.h \
  fl_defs.h lstate.h ltm.h lzio.h lmem.h fl_instr.h lopcodes.h fl_prof.h \
  fl_rec.h
 fl_rec.o: fl_rec.c lprefix.h lobject.h llimits.h lua.h luaconf.h \
- fl_defs.h lopcodes.h lstate.h ltm.h lzio.h lmem.h fl_rec.h fl_jit.h \
+ fl_defs.h lopcodes.h lstate.h ltm.h lzio.h lmem.h fl_rec.h fl_jitc.h \
  fl_containers.h
 lapi.o: lapi.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
  lobject.h fl_defs.h ltm.h lzio.h lmem.h ldebug.h ldo.h lfunc.h lgc.h \

@@ -33,7 +33,7 @@
 #include "fl_asm.h"
 #include "fl_instr.h"
 #include "fl_ir.h"
-#include "fl_jit.h"
+#include "fl_jitc.h"
 
 /* Internal types */
 struct JitRegister;

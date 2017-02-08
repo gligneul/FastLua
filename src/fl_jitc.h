@@ -23,7 +23,7 @@
  */
 
 /*
- * This module compiles the recorded trace into machine code.
+ * This module compiles the recorded trace into FLIR and then into machine code.
  */
 
 #ifndef fl_jit_h
