@@ -572,7 +572,7 @@ static void close_func (LexState *ls) {
   lua_assert(fs->bl == NULL);
   ls->fs = fs->prev;
 #ifdef FL_ENABLE
-  fl_initproto(L, f);
+  fl_loadproto(L, f);
 #endif
   luaC_checkGC(L);
 }

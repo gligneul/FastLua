@@ -41,15 +41,20 @@ void fl_closestate(struct lua_State *L) {
   (void)L;
 }
 
-void fl_initproto(struct lua_State *L, struct Proto *p) {
+void fl_initproto(struct Proto *p) {
+  p->fl.instr = NULL;
+}
+
+void fl_closeproto(struct lua_State *L, struct Proto *p) {
+  if (!p->fl.instr) return;
+  flasm_closeproto(L, p);
+  luaM_freearray(L, p->fl.instr, p->sizecode);
+}
+
+void fl_loadproto(struct lua_State *L, struct Proto *p) {
   int n = p->sizecode;
   p->fl.instr = luaM_newvector(L, n, union FLInstructionData);
   memset(p->fl.instr, 0, n * sizeof(union FLInstructionData));
   flprof_initopcodes(p->code, n);
-}
-
-void fl_closeproto(struct lua_State *L, struct Proto *p) {
-  flasm_closeproto(L, p);
-  luaM_freearray(L, p->fl.instr, p->sizecode);
 }
 

@@ -61,8 +61,11 @@ void fl_initstate(struct lua_State *L);
 void fl_closestate(struct lua_State *L);
 
 /* Init/destroy FastLua proto. */
-void fl_initproto(struct lua_State *L, struct Proto *p);
+void fl_initproto(struct Proto *p);
 void fl_closeproto(struct lua_State *L, struct Proto *p);
+
+/* Load the jit information in the proto after other fields. */
+void fl_loadproto(struct lua_State *L, struct Proto *p);
 
 #endif
 

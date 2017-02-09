@@ -218,7 +218,7 @@ static void LoadFunction (LoadState *S, Proto *f, TString *psource) {
   LoadProtos(S, f);
   LoadDebug(S, f);
 #ifdef FL_ENABLE
-  fl_initproto(S->L, f);
+  fl_loadproto(S->L, f);
 #endif
 }
 
