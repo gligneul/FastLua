@@ -33,15 +33,21 @@
 
 struct lua_State;
 
+enum FLLoggerLevel {
+  FL_LOGGER_NONE,
+  FL_LOGGER_ERROR,
+  FL_LOGGER_ALL
+};
+
+/* Enable/disable de logger. Since this is a debug module, global variables
+ * are used and this module isn't thread safe. */
+extern int fll_enable;
+
 /* Print the message in stderr. */
 void fllog(const char *format, ...);
 
 /* Print the message in stderr and print a newline. */
 void fllogln(const char *format, ...);
-
-/* Enable/disable de logger. Since this is a debug module, global variables
- * are used and this module isn't thread safe. */
-void fll_enable(int enable);
 
 /* Print the buffer in stderr (usefull for Lua strings). */
 void fll_write(const void *buffer, size_t nbytes);
@@ -51,11 +57,17 @@ void fll_dumpstack(struct lua_State *L);
 
 /* Print an error message */
 #define fll_error(message) \
-  fllog("error at %d %s: %s\n", __LINE__, __FILE__, message)
+  do { \
+    if (fll_enable >= FL_LOGGER_ERROR) \
+      fprintf(stderr, "error at %d %s: %s\n", __LINE__, __FILE__, message); \
+  } while (0)
 
 /* Print the message if the condition fail. */
 #define fll_assert(condition, message) \
-  do { if (!(condition)) fll_error(message); } while (0)
+  do { \
+    if (fll_enable >= FL_LOGGER_ERROR &&!(condition)) \
+      fll_error(message); \
+  } while (0)
 
 /*
  * Define empty function when the logger is disabled:
@@ -65,6 +77,7 @@ static __inline void fllog(const char *format, ...) { (void)format; }
 #define fll_enable(enable) (void)0
 #define fll_write(buffer, nbytes) (void)0
 #define fll_dumpstack() (void)0
+static __inline void fllog(const char *format, ...) { (void)format; }
 #define fll_error(message) (void)0
 #define fll_assert(condition, msg) (void)0
 #endif

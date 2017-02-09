@@ -22,55 +22,41 @@
  * IN THE SOFTWARE.
  */
 
-#include <stdio.h>
-
-#ifdef FL_LOGGER
+#include <string.h>
 
 #include "lprefix.h"
-#include "lobject.h"
-#include "lstate.h"
+#include "lua.h"
+#include "lauxlib.h"
+#include "lualib.h"
 
 #include "fl_logger.h"
 
-int fll_enable = FL_LOGGER_ERROR;
-
-#define fllog_impl(format) \
-  do { \
-    if (fll_enable < FL_LOGGER_ALL) return; \
-    va_list args; \
-    va_start(args, format); \
-    vfprintf(stderr, format, args); \
-    va_end(args); \
-  } while (0)
-
-void fllog(const char *format, ...) {
-  fllog_impl(format);
+/*
+ * Change the logger level.
+ * Parameters:
+ *  level : string      Possible values: 'none', 'error', 'all'
+ */
+static int logger(lua_State *L) {
+  const char *level = luaL_checkstring(L, 1);
+  if (!strcmp(level, "none"))
+    fll_enable = FL_LOGGER_NONE;
+  else if (!strcmp(level, "error"))
+    fll_enable = FL_LOGGER_ERROR;
+  else if (!strcmp(level, "all"))
+    fll_enable = FL_LOGGER_ALL;
+  else
+    luaL_error(L, "bad argument #1 to 'logger' "
+                  "('none', 'error' or 'all' expected)");
+  return 0;
 }
 
-void fllogln(const char *format, ...) {
-  fllog_impl(format);
-  fputs("\n", stderr);
-}
+static const luaL_Reg jit_funcs[] = {
+  {"logger", logger},
+  {NULL, NULL}
+};
 
-void fll_write(const void *buffer, size_t nbytes) {
-  if (fll_enable < FL_LOGGER_ALL) return;
-  fwrite(buffer, sizeof(char), nbytes, stderr);
+LUAMOD_API int luaopen_jit(lua_State *L) {
+  luaL_newlib(L, jit_funcs);
+  return 1;
 }
-
-void fll_dumpstack(lua_State *L) {
-  StkId pos;
-  for (pos = L->ci->u.l.base; pos != L->top; ++pos) {
-    size_t len;
-    const char *s;
-    TValue val = *pos;
-    luaO_tostring(L, &val);
-    fllog("%p: ", (void*)pos);
-    len = vslen(&val);
-    s = svalue(&val);
-    fll_write(s, len);
-    fllog("\n");
-  }
-}
-
-#endif
 

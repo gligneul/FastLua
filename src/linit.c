@@ -53,6 +53,9 @@ static const luaL_Reg loadedlibs[] = {
 #if defined(LUA_COMPAT_BITLIB)
   {LUA_BITLIBNAME, luaopen_bit32},
 #endif
+#ifdef FL_ENABLE
+  {LUA_JITLIBNAME, luaopen_jit},
+#endif
   {NULL, NULL}
 };
 

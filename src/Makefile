@@ -40,6 +40,7 @@ MYOBJS= \
  fl_instr.o \
  fl_ir.o \
  fl_jitc.o \
+ fl_lib.o \
  fl_logger.o \
  fl_prof.o \
  fl_rec.o
