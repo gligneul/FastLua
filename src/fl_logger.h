@@ -59,7 +59,8 @@ void fll_dumpstack(struct lua_State *L);
 #define fll_error(message) \
   do { \
     if (fll_enable >= FL_LOGGER_ERROR) \
-      fprintf(stderr, "error at %d %s: %s\n", __LINE__, __FILE__, message); \
+      fprintf(stderr, "error at line %d in %s: %s\n", __LINE__, __FILE__, \
+              message); \
   } while (0)
 
 /* Print the message if the condition fail. */

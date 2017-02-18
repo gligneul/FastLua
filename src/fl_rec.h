@@ -40,9 +40,8 @@ struct CallInfo;
 /* Obtains the recording enabled/disabled flag. */
 #define flrec_isrecording(L) (L->fl.trace != NULL)
 
-/* Start/stop the recording. */
+/* Start the recording. */
 void flrec_start(struct lua_State *L);
-void flrec_stop(struct lua_State *L);
 
 /* Record the current opcode and write it into the current trace. */
 #define flrec_record(L, ci) \

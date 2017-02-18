@@ -56,7 +56,7 @@ TSCC_IMPL_VECTOR_WA(JitExitVector, exvec_, JitExit *, struct lua_State *,
 /* Lua stack register. */
 struct JitRegister {
   IRValue *value;
-  IRValue *type;
+  IRValue *tag;
 };
 
 /* Information necessary to build the a jit exit */
@@ -81,7 +81,6 @@ struct JitState {
   int nregisters;               /* number of registers in Lua stack */
   struct JitRegister *current;  /* register's current value */
   struct JitRegister *phi;      /* register's phi value */
-  int *loadedtype;              /* type of the loaded register */
   struct JitRegister *loaded;   /* register's loaded from the Lua stack */
   l_mem pc;                     /* current instruction position */
 };
@@ -115,12 +114,10 @@ static JitState *createjitstate(lua_State *L, JitTrace *tr) {
   J->current = luaM_newvector(L, J->nregisters, struct JitRegister);
   J->phi = luaM_newvector(L, J->nregisters, struct JitRegister);
   J->loaded = luaM_newvector(L, J->nregisters, struct JitRegister);
-  J->loadedtype = luaM_newvector(L, J->nregisters, int);
   J->pc = tr->start - tr->p->code;
   memset(J->current, 0, J->nregisters * sizeof(struct JitRegister));
   memset(J->phi, 0, J->nregisters * sizeof(struct JitRegister));
   memset(J->loaded, 0, J->nregisters * sizeof(struct JitRegister));
-  memset(J->loadedtype, 0, J->nregisters * sizeof(int));
   return J;
 }
 
@@ -131,7 +128,6 @@ static void destroyjitstate(JitState *J) {
   luaM_freearray(J->L, J->current, J->nregisters);
   luaM_freearray(J->L, J->phi, J->nregisters);
   luaM_freearray(J->L, J->loaded, J->nregisters);
-  luaM_freearray(J->L, J->loadedtype, J->nregisters);
   luaM_free(J->L, J);
 }
 
@@ -157,12 +153,12 @@ static l_mem getnextpc(l_mem oldpc, Instruction i) {
   return pc;
 }
 
-/* Convert the lua type to ir type. */
-static enum IRType converttype(int type) {
-  switch (type) {
+/* Convert a lua tag to an ir type. */
+static enum IRType converttag(int tag) {
+  switch (tag) {
     case LUA_TNUMFLT: return IR_FLOAT;
     case LUA_TNUMINT: return IR_LUAINT;
-    default: fll_error("converttype: unhandled type"); break;
+    default: fll_error("converttag: unhandled tag"); break;
   }
   return 0;
 }
@@ -176,22 +172,15 @@ static enum IRBinOp convertbinop(int op) {
   return 0;
 }
 
-/* Create a guard instruction that verifies if the type matches what is
- * expected. */
-static void guardtype(JitState *J, IRValue *type, int expectedtype,
-                      IRBBlock *continuation, IRBBlock *sideexit) {
-  ir_cmp(IR_NE, type, ir_consti(expectedtype), sideexit, continuation);
-}
-
-/* Verify if the type matches the expected inside the preloop block. */
-static void guarttypeinpreloop(JitState *J, IRValue *type, int expectedtype) {
+/* Verify if the tag matches what is expected in the preloop block. */
+static void guardtaginpreloop(JitState *J, IRValue *tag, int expectedtag) {
   IRBBlock *continuation = ir_insertbblock(J->preloop);
   if (J->earlyexit == NULL) {
     ir_currbblock() = J->earlyexit = ir_addbblock();
     ir_return(ir_consti(1)); 
   }
   ir_currbblock() = J->preloop;
-  guardtype(J, type, expectedtype, continuation, J->earlyexit);
+  ir_cmp(IR_NE, tag, ir_consti(expectedtag), J->earlyexit, continuation);
   ir_currbblock() = J->preloop = continuation;
 }
 
@@ -200,42 +189,44 @@ static int registerhasinfo(JitState *J, int regpos) {
   return J->current[regpos].value != NULL;
 }
 
-/* Verify if a register field (value/type) was loaded from the stack. */
+/* Verify if a register field (value/tag) was loaded from the stack. */
 #define loadedfromstack(J, regpos, field) \
-    ((J->current[regpos].field != NULL) && (J->phi[regpos].field == NULL))
+    ((J->loaded[regpos].field != NULL) && (J->phi[regpos].field == NULL))
+
+/* Obtain the register tag. */
+static int getregistertag(JitState *J, int regpos) {
+  return J->current[regpos].tag->args.konst.i;
+}
 
 /* Load a register from the Lua stack and verify if it matches the expected
- * type. Registers are loaded in the entry block. */
-static IRValue *getregister(JitState *J, int regpos, int expectedtype,
-                            int verifytype) {
+ * tag. Registers are loaded in the entry block. */
+static IRValue *getregister(JitState *J, int regpos, int expectedtag,
+                            int checktag) {
   struct JitRegister *curr = J->current + regpos;
-  enum IRType irtype = converttype(expectedtype);
+  enum IRType type = converttag(expectedtag);
   if (!registerhasinfo(J, regpos)) {
     /* No information about the register was found, so load it from the Lua
      * stack in the entry block. */
     int addr = sizeof(TValue) * regpos;
     IRBBlock *oldcurrbblock = ir_currbblock();
     ir_currbblock() = J->preloop;
-    if (verifytype) {
-      curr->type = ir_load(IR_INT, J->base, addr + offsetof(TValue, tt_));
-      guarttypeinpreloop(J, curr->type, expectedtype);
+    if (checktag) {
+      IRValue *tag = ir_load(IR_INT, J->base, addr + offsetof(TValue, tt_));
+      guardtaginpreloop(J, tag, expectedtag);
     }
-    curr->value = ir_load(irtype, J->base, addr + offsetof(TValue, value_));
+    curr->tag = ir_consti(expectedtag);
+    curr->value = ir_load(type, J->base, addr + offsetof(TValue, value_));
     J->loaded[regpos] = *curr;
-    J->loadedtype[regpos] = expectedtype;
     ir_currbblock() = oldcurrbblock;
   }
-  else {
-    /* TODO: verify if the current loadedtype is correct */
-  }
+  /* TODO: verify if the current tag is correct */
   return curr->value;
 }
 
 /* Load a constant from the constant table. */
-static IRValue *getconst(JitState *J, int kpos, int expectedtype) {
+static IRValue *getconst(JitState *J, int kpos) {
   TValue *k = J->tr->p->k + kpos;
-  fll_assert(expectedtype == ttype(k), "getconst: const type doesn't match");
-  switch (expectedtype) {
+  switch (ttype(k)) {
     case LUA_TNUMFLT: return ir_constf(fltvalue(k));
     case LUA_TNUMINT: return ir_consti(ivalue(k));
     default: fll_error("getconst: unhandled const type"); break;
@@ -243,21 +234,26 @@ static IRValue *getconst(JitState *J, int kpos, int expectedtype) {
   return NULL;
 }
 
+/* Obtain the constant tag. */
+static int getconsttag(JitState *J, int kpos) {
+  return ttype((J->tr->p->k + kpos));
+}
+
 /* Load a constant or register given the position. */
-static IRValue *gettvalue(JitState *J, int pos, int expectedtype,
-                          int verifytype) {
+static IRValue *gettvalue(JitState *J, int pos, int expectedtag,
+                          int checktag) {
   if (ISK(pos))
-    return getconst(J, INDEXK(pos), expectedtype);
+    return getconst(J, INDEXK(pos));
   else
-    return getregister(J, pos, expectedtype, verifytype);
+    return getregister(J, pos, expectedtag, checktag);
 }
 
 /* Store a Lua stack register */
 static void storeregister(JitState *J, int regpos, struct JitRegister r) {
   int addr = sizeof(TValue) * regpos;
   ir_store(IR_LUAINT, J->base, r.value, addr + offsetof(TValue, value_));
-  if (r.type)
-    ir_store(IR_INT, J->base, r.type, addr + offsetof(TValue, tt_));
+  if (r.tag)
+    ir_store(IR_INT, J->base, r.tag, addr + offsetof(TValue, tt_));
 }
 
 /* Add a phi at the begining of the loop basic block and replace the old value.
@@ -289,32 +285,31 @@ static void linkphivalues(JitState *J) {
       ir_addphinode(J->phi[i].value, J->loaded[i].value, J->preloop);
       ir_addphinode(J->phi[i].value, J->current[i].value, J->loopend);
     }
-    if (J->phi[i].type) {
-      ir_addphinode(J->phi[i].type, J->loaded[i].type, J->preloop);
-      ir_addphinode(J->phi[i].type, J->current[i].type, J->loopend);
+    if (J->phi[i].tag) {
+      ir_addphinode(J->phi[i].tag, J->loaded[i].tag, J->preloop);
+      ir_addphinode(J->phi[i].tag, J->current[i].tag, J->loopend);
     }
   }
 }
 
 /* Define the Lua register value. */
-static void setregister(JitState *J, int regpos, int type, IRValue *value) {
-  int updatetype = 1;
+static void setregister(JitState *J, int regpos, int tag, IRValue *value) {
+  int updatetag = 1;
   if (loadedfromstack(J, regpos, value)) {
     /* The saved value is from the entry block, so create a phi and replace the
      * old value. */
     J->phi[regpos].value = insertphivalue(J, J->loaded[regpos].value);
   }
-  if (loadedfromstack(J, regpos, type)) {
-    /* The same thing for types, but also checks if the phi is necessary. */
-    if (type != J->loadedtype[regpos])
-      J->phi[regpos].type = insertphivalue(J, J->loaded[regpos].type);
+  if (loadedfromstack(J, regpos, tag)) {
+    /* The same thing for tags, but also checks if the phi is necessary. */
+    if (tag != getregistertag(J, regpos))
+      J->phi[regpos].tag = insertphivalue(J, J->loaded[regpos].tag);
     else
-      updatetype = 0;
+      updatetag = 0;
   }
   /* Update register current information */
   J->current[regpos].value = value;
-  if (updatetype)
-    J->current[regpos].type = ir_consti(type);
+  if (updatetag) J->current[regpos].tag = ir_consti(tag);
 }
 
 /* Add the missing jumps in the basic blocks. */
@@ -348,8 +343,10 @@ static void closeexit(JitState *J, JitExit *e) {
       storeregister(J, i, e->tostore[i]);
     else if (J->phi[i].value)
       storeregister(J, i, J->phi[i]);
+    else if (!loadedfromstack(J, i, value))
+      storeregister(J, i, J->current[i]);
   }
-  ir_return(ir_consti(0));
+  ir_return(ir_consti(e->status));
 }
 
 /* Auxiliary macros for obtaining the Lua's tvalues. */
@@ -365,18 +362,25 @@ static void compilebytecode(JitState *J, int n) {
   union JitRTInfo rt = fljit_rtvec_get(J->tr->rtinfo, n);
   int op = GET_OPCODE(i);
   switch (op) {
+    case OP_LOADK: {
+      int bx = GETARG_Bx(i);
+      IRValue *k = getconst(J, bx);
+      int tag = getconsttag(J, bx);
+      setregister(J, GETARG_A(i), tag, k);
+      break;
+    }
     case OP_ADD: {
       IRValue *rb = getrkb(J, i, rt);
       IRValue *rc = getrkc(J, i, rt);
       /* TODO: type conversions (always performing int operations) */
-      int resulttype = LUA_TNUMINT;
+      int resulttag = LUA_TNUMINT;
       IRValue *resultvalue = ir_binop(convertbinop(op), rb, rc);
-      setregister(J, GETARG_A(i), resulttype, resultvalue);
+      setregister(J, GETARG_A(i), resulttag, resultvalue);
       break;
     }
     case OP_FORLOOP: {
       int ra = GETARG_A(i);
-      int expectedtype = rt.forloop.type;
+      int expectedtag = rt.forloop.type;
       IRValue *idx, *limit, *step, *newidx;
       IRBBlock *loop = J->loopend;
       IRBBlock *keeplooping = ir_insertbblock(loop);
@@ -384,9 +388,9 @@ static void compilebytecode(JitState *J, int n) {
       IRBBlock *negstep = ir_insertbblock(loop);
       IRBBlock *loopexit = addexit(J, 0);
       /*----- currloop */
-      idx = gettvalue(J, ra, expectedtype, 1);
-      limit = gettvalue(J, ra + 1, expectedtype, 0);
-      step = gettvalue(J, ra + 2, expectedtype, 0);
+      idx = gettvalue(J, ra, expectedtag, 1);
+      limit = gettvalue(J, ra + 1, expectedtag, 0);
+      step = gettvalue(J, ra + 2, expectedtag, 0);
       newidx = ir_binop(IR_ADD, idx, step);
       ir_cmp(IR_LT, step, ir_consti(0), negstep, posstep);
       /*----- negstep */
@@ -397,8 +401,8 @@ static void compilebytecode(JitState *J, int n) {
       ir_cmp(IR_LE, newidx, limit, keeplooping, loopexit);
       /*----- keeplooping */
       ir_currbblock() = J->loopend = keeplooping;
-      setregister(J, ra, expectedtype, newidx); /* internal index */
-      setregister(J, ra + 3, expectedtype, newidx); /* external index */
+      setregister(J, ra, expectedtag, newidx); /* internal index */
+      setregister(J, ra + 3, expectedtag, newidx); /* external index */
       break;
     }
     default:

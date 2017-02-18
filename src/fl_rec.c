@@ -50,6 +50,9 @@ static int creatert(CallInfo *ci, Instruction i, union JitRTInfo *rt) {
   TValue *base = ci->u.l.base;
   TValue *k = getproto(ci->func)->k;
   switch (GET_OPCODE(i)) {
+    case OP_LOADK:
+      /* do nothing */
+      return 1;
     case OP_ADD:
     case OP_SUB:
     case OP_MUL: {
@@ -76,11 +79,13 @@ void flrec_start(struct lua_State *L) {
   tracerec(L) = fljit_createtrace(L);
 }
 
-void flrec_stop(struct lua_State *L) {
-  fll_assert(flrec_isrecording(L), "flrec_stop: not recording");
-  fll_assert(tracerec(L), "flrec_stop: trace record not found");
-  fllogln("flrec_stop: stop recording");
-  fljit_compile(tracerec(L));
+/* Stop the recording. If status is != 0, the recording failed. */
+static void stoprecording(struct lua_State *L, int status) {
+  fll_assert(flrec_isrecording(L), "stoprecording: not recording");
+  fll_assert(tracerec(L), "stoprecording: trace record not found");
+  fllogln("stoprecording: stop recording");
+  if (status != 0)
+    fljit_compile(tracerec(L));
   fljit_destroytrace(tracerec(L));
   tracerec(L) = NULL;
 }
@@ -90,7 +95,7 @@ void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
   const Instruction *i = ci->u.l.savedpc;
   if (tr->start != i) {
     union JitRTInfo rt;
-    fllogln("flrec_record_: recording opcode %s", luaP_opnames[GET_OPCODE(*i)]);
+    fllogln("flrec_record_: %s", luaP_opnames[GET_OPCODE(*i)]);
     if (tr->start == NULL) {
       /* start the recording */
       tr->p = getproto(ci->func);
@@ -101,13 +106,14 @@ void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
       tr->n++;
     }
     else {
-      flrec_stop(L);
+      fllogln("recording failed");
+      stoprecording(L, 1);
     }
   }
   else {
     /* back to the loop start */
     tr->completeloop = 1;
-    flrec_stop(L);
+    stoprecording(L, 1);
   }
 }
 
