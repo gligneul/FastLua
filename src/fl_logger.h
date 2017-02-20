@@ -56,17 +56,13 @@ void fll_write(const void *buffer, size_t nbytes);
 void fll_dumpstack(struct lua_State *L);
 
 /* Print an error message */
-#define fll_error(message) \
-  do { \
-    if (fll_enable >= FL_LOGGER_ERROR) \
-      fprintf(stderr, "error at line %d in %s: %s\n", __LINE__, __FILE__, \
-              message); \
-  } while (0)
+void fll_error_(const char *file, int line, const char *message);
+#define fll_error(message) fll_error_(__FILE__, __LINE__, message)
 
 /* Print the message if the condition fail. */
 #define fll_assert(condition, message) \
   do { \
-    if (fll_enable >= FL_LOGGER_ERROR &&!(condition)) \
+    if (!(condition)) \
       fll_error(message); \
   } while (0)
 

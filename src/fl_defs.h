@@ -34,6 +34,7 @@ struct lua_State;
 struct Proto;
 struct AsmInstrData;
 struct JitTrace;
+struct FLInstrExtVector;
 
 /* Numbers of opcode executions required to record a trace. */
 #ifndef FL_JIT_THRESHOLD
@@ -42,18 +43,12 @@ struct JitTrace;
 
 /* Global data that should be stored in lua_State. */
 struct FLState {
-  struct JitTrace *trace;   /* trace beeing recorded */
-};
-
-/* Jit information about each instruction in a function. */
-union FLInstructionData {
-  int count;                        /* number of times executed; used in prof */
-  struct AsmInstrData *asmdata;     /* compiled function; used for execution */
+  struct JitTrace *trace;           /* trace beeing recorded */
 };
 
 /* Data that should be stored in lua Proto. */
 struct FLProto {
-  union FLInstructionData *instr;
+  struct FLInstrExtVector *instr;
 };
 
 /* Init/destroy FastLua state. */

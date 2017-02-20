@@ -12,7 +12,6 @@
 #include <float.h>
 #include <limits.h>
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,12 +29,10 @@
 #include "ltm.h"
 #include "lvm.h"
 
-#ifdef FL_ENABLE
+/* @@FastLua */
 #include "fl_asm.h"
-#include "fl_instr.h"
-#include "fl_prof.h"
+#include "fl_vm.h"
 #include "fl_rec.h"
-#endif
 
 
 /* limit for table tag-method chains (to avoid loops) */
@@ -805,9 +802,8 @@ void luaV_execute (lua_State *L) {
   for (;;) {
     Instruction i;
     StkId ra;
-#if FL_ENABLE
+    /* @@FastLua */
     flrec_record(L, ci);
-#endif
     vmfetch();
     vmdispatch (GET_OPCODE(i)) {
       vmcase(OP_MOVE) {
@@ -1198,7 +1194,7 @@ void luaV_execute (lua_State *L) {
         }
       }
       vmcase(OP_FORLOOP) {
-       l_forloop:
+        l_forloop:
         if (ttisinteger(ra)) {  /* integer loop? */
           lua_Integer step = ivalue(ra + 2);
           lua_Integer idx = intop(+, ivalue(ra), step); /* increment index */
@@ -1222,72 +1218,6 @@ void luaV_execute (lua_State *L) {
         }
         vmbreak;
       }
-#if FL_ENABLE
-      vmcase(OP_FORPREP_PROF) {
-        TValue *init = ra;
-        TValue *plimit = ra + 1;
-        TValue *pstep = ra + 2;
-        lua_Integer ilimit;
-        int stopnow;
-        lua_Integer loopcount = 0;
-        if (ttisinteger(init) && ttisinteger(pstep) &&
-            forlimit(plimit, &ilimit, ivalue(pstep), &stopnow)) {
-          /* all values are integer */
-          lua_Integer initv = (stopnow ? 0 : ivalue(init));
-          setivalue(plimit, ilimit);
-          setivalue(init, intop(-, initv, ivalue(pstep)));
-          if (ivalue(pstep) == 0)
-            loopcount = FL_JIT_THRESHOLD;
-          else
-            loopcount = intop(/, intop(-, ilimit, ivalue(init)), ivalue(pstep));
-        }
-        else {  /* try making all values floats */
-          lua_Number ninit; lua_Number nlimit; lua_Number nstep;
-          if (!tonumber(plimit, &nlimit))
-            luaG_runerror(L, "'for' limit must be a number");
-          setfltvalue(plimit, nlimit);
-          if (!tonumber(pstep, &nstep))
-            luaG_runerror(L, "'for' step must be a number");
-          setfltvalue(pstep, nstep);
-          if (!tonumber(init, &ninit))
-            luaG_runerror(L, "'for' initial value must be a number");
-          setfltvalue(init, luai_numsub(L, ninit, nstep));
-          if (nstep == 0.0)
-            loopcount = FL_JIT_THRESHOLD;
-          else
-            loopcount = cast_int((nlimit - fltvalue(init)) / nstep);
-        }
-        if (loopcount > 0) {
-          short lc = (loopcount > FL_JIT_THRESHOLD ?
-                      FL_JIT_THRESHOLD : loopcount);
-          flprof_profile(L, ci, lc);
-        }
-        ci->u.l.savedpc += GETARG_sBx(i);
-        vmbreak;
-      }
-      vmcase(OP_FORLOOP_JIT) {
-        Proto *p = cl->p;
-        int instr = fli_currentinstr(ci, p);
-        AsmFunction f = flasm_getfunction(p, instr);
-        switch (f(L, base)) {
-          case FL_SUCCESS:
-            break;
-          case FL_EARLY_EXIT:
-            flasm_destroy(L, p, instr);
-            goto l_forloop;
-            break;
-          case FL_SIDE_EXIT:
-            flasm_destroy(L, p, instr);
-            lua_assert(0);
-            break;
-          default:
-            lua_assert(0);
-            break;
-        }
-
-        vmbreak;
-      }
-#endif
       vmcase(OP_FORPREP) {
         TValue *init = ra;
         TValue *plimit = ra + 1;
@@ -1390,6 +1320,11 @@ void luaV_execute (lua_State *L) {
       vmcase(OP_EXTRAARG) {
         lua_assert(0);
         vmbreak;
+      }
+      vmcase(OP_FLVM) {
+        /* @@FastLua */
+        flvm_execute();
+        break;
       }
     }
   }

@@ -228,12 +228,10 @@ OP_CLOSURE,/*	A Bx	R(A) := closure(KPROTO[Bx])			*/
 
 OP_VARARG,/*	A B	R(A), R(A+1), ..., R(A+B-2) = vararg		*/
 
-#ifdef FL_ENABLE
-OP_FORPREP_PROF,
-OP_FORLOOP_JIT,
-#endif
+OP_EXTRAARG,/*	Ax	extra (larger) argument for previous opcode	*/
 
-OP_EXTRAARG/*	Ax	extra (larger) argument for previous opcode	*/
+/* @@FastLua */
+OP_FLVM
 } OpCode;
 
 

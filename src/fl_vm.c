@@ -22,38 +22,25 @@
  * IN THE SOFTWARE.
  */
 
-#include <stdio.h>
-#include <string.h>
-
 #include "lprefix.h"
 #include "lobject.h"
 #include "lstate.h"
+#include "lvm.h"
 
-#include "fl_instr.h"
 #include "fl_logger.h"
-#include "fl_prof.h"
 #include "fl_rec.h"
+#include "fl_vm.h"
 
-#define SWAP_OPCODE(i, from, to) \
-    case from: SET_OPCODE(i, to); break
-
-void flprof_initopcodes(Instruction *code, int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    fli_toprof(&code[i]);
-}
-
-void flprof_profile(struct lua_State *L, CallInfo *ci, int loopcount) {
+void flvm_profile(struct lua_State *L, CallInfo *ci, int loopcount) {
   fll_assert(loopcount > 0, "flprof_profile: loopcount <= 0");
   if (!flrec_isrecording(L)) {
     Proto *p = getproto(ci->func);
     l_mem i = fli_currentinstr(ci, p);
-    int *count = &p->fl.instr[i].count;
-    fll_assert(*count < FL_JIT_THRESHOLD,
-               "flprof_profile: threshold already reached");
+    int *count = &fli_getext(p, i)->u.count;
+    fll_assert(*count < FL_JIT_THRESHOLD, "threshold already reached");
     *count += loopcount;
     if (*count >= FL_JIT_THRESHOLD) {
-      fli_reset(&p->code[i]);
+      fli_reset(p, i);
       flrec_start(L);
     }
   }

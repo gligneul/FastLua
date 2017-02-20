@@ -22,8 +22,6 @@
  * IN THE SOFTWARE.
  */
 
-#include <string.h>
-
 #include "lprefix.h"
 #include "lmem.h"
 #include "lobject.h"
@@ -31,7 +29,7 @@
 
 #include "fl_asm.h"
 #include "fl_defs.h"
-#include "fl_prof.h"
+#include "fl_instr.h"
 
 void fl_initstate(struct lua_State *L) {
   L->fl.trace = NULL;
@@ -48,13 +46,11 @@ void fl_initproto(struct Proto *p) {
 void fl_closeproto(struct lua_State *L, struct Proto *p) {
   if (!p->fl.instr) return;
   flasm_closeproto(L, p);
-  luaM_freearray(L, p->fl.instr, p->sizecode);
+  fliv_destroy(p->fl.instr);
 }
 
 void fl_loadproto(struct lua_State *L, struct Proto *p) {
-  int n = p->sizecode;
-  p->fl.instr = luaM_newvector(L, n, union FLInstructionData);
-  memset(p->fl.instr, 0, n * sizeof(union FLInstructionData));
-  flprof_initopcodes(p->code, n);
+  p->fl.instr = fliv_createwa(L);
+  fli_loadproto(p);
 }
 

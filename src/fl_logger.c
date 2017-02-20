@@ -57,6 +57,11 @@ void fll_write(const void *buffer, size_t nbytes) {
   fwrite(buffer, sizeof(char), nbytes, stderr);
 }
 
+void fll_error_(const char *file, int line, const char *message) {
+  if (fll_enable < FL_LOGGER_ERROR) return;
+  fprintf(stderr, "error at line %d in %s: %s\n", line, file, message);
+}
+
 void fll_dumpstack(lua_State *L) {
   StkId pos;
   for (pos = L->ci->u.l.base; pos != L->top; ++pos) {
