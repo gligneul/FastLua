@@ -39,16 +39,19 @@ struct lua_State;
 
 /* Types defined in this module */
 typedef struct JitTrace JitTrace;
-union JitRTInfo;
+struct JitRTInfo;
 
 /* Containers */
-TSCC_DECL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, union JitRTInfo,
+TSCC_DECL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, struct JitRTInfo,
     struct lua_State *)
 
 /* Runtime information for each opcode */
-union JitRTInfo {
-  struct { lu_byte type; } forloop;
-  struct { lu_byte rb, rc; } binop;
+struct JitRTInfo {
+  Instruction instr;            /* instruction */
+  union {                       /* specific fields for each opcode */
+    struct { lu_byte type; } forloop;
+    struct { lu_byte rb, rc; } binop;
+  } u;
 };
 
 /* JitTrace */

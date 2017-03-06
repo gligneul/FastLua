@@ -46,9 +46,10 @@
 
 /* Produce the runtime information of the instruction.
  * Return 1 if the instruction can be compiled, else return 0. */
-static int creatert(CallInfo *ci, Instruction i, union JitRTInfo *rt) {
+static int creatert(CallInfo *ci, Instruction i, struct JitRTInfo *rt) {
   TValue *base = ci->u.l.base;
   TValue *k = getproto(ci->func)->k;
+  rt->instr = i;
   switch (GET_OPCODE(i)) {
     case OP_LOADK:
       /* do nothing */
@@ -57,13 +58,13 @@ static int creatert(CallInfo *ci, Instruction i, union JitRTInfo *rt) {
     case OP_SUB:
     case OP_MUL: {
       TValue *rkb = RKB(i), *rkc = RKC(i);
-      rt->binop.rb = ttype(rkb);
-      rt->binop.rc = ttype(rkc);
+      rt->u.binop.rb = ttype(rkb);
+      rt->u.binop.rc = ttype(rkc);
       /* TODO: now only compiles int/float opcodes :'( */
       return ttisnumber(rkb) && ttisnumber(rkc);
     }
     case OP_FORLOOP: {
-      rt->forloop.type = ttype(RA(i));
+      rt->u.forloop.type = ttype(RA(i));
       return 1;
     }
     default:
@@ -94,7 +95,7 @@ void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
   JitTrace *tr = tracerec(L);
   const Instruction *i = ci->u.l.savedpc;
   if (tr->start != i) {
-    union JitRTInfo rt;
+    struct JitRTInfo rt;
     fllogln("flrec_record_: %s", luaP_opnames[GET_OPCODE(*i)]);
     if (tr->start == NULL) {
       /* start the recording */

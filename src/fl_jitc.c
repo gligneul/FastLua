@@ -41,7 +41,7 @@ typedef struct JitExit JitExit;
 typedef struct JitState JitState;
 
 /* Containers */
-TSCC_IMPL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, union JitRTInfo,
+TSCC_IMPL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, struct JitRTInfo,
     struct lua_State *, luaM_realloc_)
 
 TSCC_DECL_VECTOR_WA(JitExitVector, exvec_, JitExit *, struct lua_State *)
@@ -114,7 +114,6 @@ static JitState *createjitstate(lua_State *L, JitTrace *tr) {
   J->current = luaM_newvector(L, J->nregisters, struct JitRegister);
   J->phi = luaM_newvector(L, J->nregisters, struct JitRegister);
   J->loaded = luaM_newvector(L, J->nregisters, struct JitRegister);
-  J->pc = tr->start - tr->p->code;
   memset(J->current, 0, J->nregisters * sizeof(struct JitRegister));
   memset(J->phi, 0, J->nregisters * sizeof(struct JitRegister));
   memset(J->loaded, 0, J->nregisters * sizeof(struct JitRegister));
@@ -137,20 +136,6 @@ static void initentryblock(JitState *J) {
   ir_currbblock() = J->preloop = ir_addbblock();
   J->lstate = ir_getarg(IR_PTR, 0);
   J->base = ir_getarg(IR_PTR, 1);
-}
-
-/* Obtain the next instruction position. */
-static l_mem getnextpc(l_mem oldpc, Instruction i) {
-  l_mem pc = oldpc;
-  switch (GET_OPCODE(i)) {
-    case OP_FORLOOP:
-      pc += GETARG_sBx(i) + 1;
-      break;
-    default:
-      pc += 1;
-      break;
-  }
-  return pc;
 }
 
 /* Convert a lua tag to an ir type. */
@@ -350,16 +335,15 @@ static void closeexit(JitState *J, JitExit *e) {
 }
 
 /* Auxiliary macros for obtaining the Lua's tvalues. */
-#define getrkb(J, i, rt) gettvalue(J, GETARG_B(i), rt.binop.rb, 1)
-#define getrkc(J, i, rt) gettvalue(J, GETARG_C(i), rt.binop.rc, 1)
+#define getrkb(J, i, rt) gettvalue(J, GETARG_B(i), rt.u.binop.rb, 1)
+#define getrkc(J, i, rt) gettvalue(J, GETARG_C(i), rt.u.binop.rc, 1)
 
 /*
- * Compiles a single bytecode, given the J->pc.
+ * Compiles a single bytecode in the trace.
  */
-static void compilebytecode(JitState *J, int n) {
-  Proto *p = J->tr->p;
-  Instruction i = p->code[J->pc];
-  union JitRTInfo rt = fljit_rtvec_get(J->tr->rtinfo, n);
+static void compilebytecode(JitState *J, int idx) {
+  struct JitRTInfo rt = fljit_rtvec_get(J->tr->rtinfo, idx);
+  Instruction i = rt.instr;
   int op = GET_OPCODE(i);
   switch (op) {
     case OP_LOADK: {
@@ -380,7 +364,7 @@ static void compilebytecode(JitState *J, int n) {
     }
     case OP_FORLOOP: {
       int ra = GETARG_A(i);
-      int expectedtag = rt.forloop.type;
+      int expectedtag = rt.u.forloop.type;
       IRValue *idx, *limit, *step, *newidx;
       IRBBlock *loop = J->loopend;
       IRBBlock *keeplooping = ir_insertbblock(loop);
@@ -409,7 +393,6 @@ static void compilebytecode(JitState *J, int n) {
       fll_error("compilebytecode: unhandled opcode");
       break;
   }
-  J->pc = getnextpc(J->pc, i);
 }
 
 JitTrace *fljit_createtrace(struct lua_State *L) {
