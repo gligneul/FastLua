@@ -35,7 +35,7 @@
 #include "fl_trace.h"
 
 /* Compiles the trace recording. */
-void fljit_compile(JitTrace *tr);
+void fljit_compile(TraceRecording *tr);
 
 #endif
 

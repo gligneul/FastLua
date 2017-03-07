@@ -33,7 +33,7 @@
 struct lua_State;
 struct Proto;
 struct AsmInstrData;
-struct JitTrace;
+struct TraceRecording;
 struct FLInstrExtVector;
 
 /* Numbers of opcode executions required to record a trace. */
@@ -43,7 +43,7 @@ struct FLInstrExtVector;
 
 /* Global data that should be stored in lua_State. */
 struct FLState {
-  struct JitTrace *trace;           /* trace beeing recorded */
+  struct TraceRecording *trace;     /* trace beeing recorded */
 };
 
 /* Data that should be stored in lua Proto. */

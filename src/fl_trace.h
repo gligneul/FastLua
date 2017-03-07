@@ -34,38 +34,44 @@
 /* Foward declarations */
 struct lua_State;
 
-/* Types defined in this module */
-typedef struct JitTrace JitTrace;
-
-/* Containers */
-struct JitRTInfo;
-TSCC_DECL_VECTOR_WA(JitRTInfoVector, flt_rtvec_, struct JitRTInfo,
-    struct lua_State *)
-#define flt_rtvec_foreach(vec, val, cmd) \
-    TSCC_VECTOR_FOREACH(flt_rtvec_, vec, struct JitRTInfo, val, cmd)
-
 /* Runtime information for each instruction */
-struct JitRTInfo {
+struct TraceInstr {
   Instruction instr;            /* instruction */
   union {                       /* specific fields for each opcode */
     struct { lu_byte type; } forloop;
-    struct { lu_byte rb, rc; } binop;
+    struct { lu_byte restag; } binop;
   } u;
 };
 
-/* JitTrace */
-struct JitTrace {
+/* TraceInstr container */
+TSCC_DECL_VECTOR_WA(TraceInstrVector, flt_rtvec_, struct TraceInstr,
+    struct lua_State *)
+#define flt_rtvec_foreach(vec, val, cmd) \
+    TSCC_VECTOR_FOREACH(flt_rtvec_, vec, struct TraceInstr, val, cmd)
+
+/* Runtime information about the registers */
+struct TraceRegister {
+  lu_byte tag;                  /* register's tag */
+  lu_byte loadedtag;            /* tag when loaded from the stack */
+  lu_byte tagset : 1;           /* the tag was set */
+  lu_byte checktag : 1;         /* the tag should be checked */
+  lu_byte loaded : 1;           /* should be loaded from the stack */
+  lu_byte set : 1;              /* the register changed */
+};
+
+/* TraceRecording */
+typedef struct TraceRecording {
   struct lua_State *L;          /* Lua state */
   struct Proto *p;              /* Lua function */
   const Instruction *start;     /* first instruction of the trace */
-  size_t n;                     /* number of instruction in the recording */
-  JitRTInfoVector *rtinfo;      /* runtime info for each instruction */
+  TraceInstrVector *instrs;     /* runtime info for each instruction */
+  struct TraceRegister *regs;   /* runtime info for each register */
   lu_byte completeloop;         /* tell if the trace is a full loop */
-};
+} TraceRecording;
 
 /* Creates/destroys a trace recording. */
-JitTrace *flt_createtrace(struct lua_State *L);
-void flt_destroytrace(JitTrace *tr);
+TraceRecording *flt_createtrace(struct lua_State *L);
+void flt_destroytrace(TraceRecording *tr);
 
 #endif
 

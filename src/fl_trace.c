@@ -28,22 +28,23 @@
 
 #include "fl_trace.h"
 
-TSCC_IMPL_VECTOR_WA(JitRTInfoVector, flt_rtvec_, struct JitRTInfo,
+TSCC_IMPL_VECTOR_WA(TraceInstrVector, flt_rtvec_, struct TraceInstr,
     struct lua_State *, luaM_realloc_)
 
-JitTrace *flt_createtrace(struct lua_State *L) {
-  JitTrace *tr = luaM_new(L, JitTrace);
+TraceRecording *flt_createtrace(struct lua_State *L) {
+  TraceRecording *tr = luaM_new(L, TraceRecording);
   tr->L = L;
   tr->p = NULL;
   tr->start = NULL;
-  tr->n = 0;
-  tr->rtinfo = flt_rtvec_createwa(L);
+  tr->instrs = flt_rtvec_createwa(L);
+  tr->regs = NULL;
   tr->completeloop = 0;
   return tr;
 }
 
-void flt_destroytrace(JitTrace *tr) {
-  flt_rtvec_destroy(tr->rtinfo);
+void flt_destroytrace(TraceRecording *tr) {
+  if (tr->p) luaM_freearray(tr->L, tr->regs, tr->p->maxstacksize);
+  flt_rtvec_destroy(tr->instrs);
   luaM_free(tr->L, tr);
 }
 
