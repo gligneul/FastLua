@@ -29,6 +29,7 @@
 #include "lopcodes.h"
 #include "lstate.h"
 
+#include "fl_analysis.h"
 #include "fl_asm.h"
 #include "fl_instr.h"
 #include "fl_ir.h"
@@ -41,9 +42,6 @@ typedef struct JitExit JitExit;
 typedef struct JitState JitState;
 
 /* Containers */
-TSCC_IMPL_VECTOR_WA(JitRTInfoVector, fljit_rtvec_, struct JitRTInfo,
-    struct lua_State *, luaM_realloc_)
-
 TSCC_DECL_VECTOR_WA(JitExitVector, exvec_, JitExit *, struct lua_State *)
 TSCC_IMPL_VECTOR_WA(JitExitVector, exvec_, JitExit *, struct lua_State *,
     luaM_realloc_)
@@ -70,6 +68,7 @@ struct JitExit {
 struct JitState {
   lua_State *L;                 /* Lua state */
   JitTrace *tr;                 /* recorded trace */
+  struct JitAnalysis analysis;  /* information from analysis step */
   IRFunction *irfunc;           /* IR output function */
   IRBBlock *preloop;            /* last basic block before the loop start */
   IRBBlock *loopstart;          /* first block in the loop */
@@ -106,6 +105,7 @@ static JitState *createjitstate(lua_State *L, JitTrace *tr) {
   JitState *J = luaM_new(L, JitState);
   J->L = L;
   J->tr = tr;
+  fla_initanalysis(&J->analysis, tr);
   J->irfunc = ir_create(L);
   J->preloop = J->loopstart = J->loopend = J->earlyexit = NULL;
   J->exits = exvec_createwa(L);
@@ -121,6 +121,7 @@ static JitState *createjitstate(lua_State *L, JitTrace *tr) {
 }
 
 static void destroyjitstate(JitState *J) {
+  fla_closeanalysis(&J->analysis, J->tr);
   ir_destroy(J->irfunc);
   exvec_foreach(J->exits, e, destroyexit(J->L, e, J->nregisters));
   exvec_destroy(J->exits);
@@ -341,8 +342,7 @@ static void closeexit(JitState *J, JitExit *e) {
 /*
  * Compiles a single bytecode in the trace.
  */
-static void compilebytecode(JitState *J, int idx) {
-  struct JitRTInfo rt = fljit_rtvec_get(J->tr->rtinfo, idx);
+static void compilebytecode(JitState *J, struct JitRTInfo rt) {
   Instruction i = rt.instr;
   int op = GET_OPCODE(i);
   switch (op) {
@@ -390,25 +390,9 @@ static void compilebytecode(JitState *J, int idx) {
       break;
     }
     default:
-      fll_error("compilebytecode: unhandled opcode");
+      fll_error("unhandled opcode");
       break;
   }
-}
-
-JitTrace *fljit_createtrace(struct lua_State *L) {
-  JitTrace *tr = luaM_new(L, JitTrace);
-  tr->L = L;
-  tr->p = NULL;
-  tr->start = NULL;
-  tr->n = 0;
-  tr->rtinfo = fljit_rtvec_createwa(L);
-  tr->completeloop = 0;
-  return tr;
-}
-
-void fljit_destroytrace(JitTrace *tr) {
-  fljit_rtvec_destroy(tr->rtinfo);
-  luaM_free(tr->L, tr);
 }
 
 void fljit_compile(JitTrace *tr) {
@@ -417,10 +401,8 @@ void fljit_compile(JitTrace *tr) {
   fllogln("fljit_compile: start compilation (%p)", tr->p);
   J = createjitstate(tr->L, tr);
   initentryblock(J);
-  size_t i;
   ir_currbblock() = J->loopstart = J->loopend = ir_addbblock();
-  for (i = 0; i < tr->n; ++i)
-    compilebytecode(J, i);
+  flt_rtvec_foreach(J->tr->rtinfo, rt, compilebytecode(J, rt));
   addjmps(J);
   linkphivalues(J);
   exvec_foreach(J->exits, e, closeexit(J, e));

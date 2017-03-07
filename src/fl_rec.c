@@ -77,7 +77,7 @@ void flrec_start(struct lua_State *L) {
   fll_assert(!flrec_isrecording(L), "flrec_start: already recording");
   fll_assert(!tracerec(L), "flrec_start: already have an trace record");
   fllogln("flrec_start: start recording (%p)", getproto(L->ci->func));
-  tracerec(L) = fljit_createtrace(L);
+  tracerec(L) = flt_createtrace(L);
 }
 
 /* Stop the recording. If status is != 0, the recording failed. */
@@ -87,7 +87,7 @@ static void stoprecording(struct lua_State *L, int status) {
   fllogln("stoprecording: stop recording");
   if (status != 0)
     fljit_compile(tracerec(L));
-  fljit_destroytrace(tracerec(L));
+  flt_destroytrace(tracerec(L));
   tracerec(L) = NULL;
 }
 
@@ -103,7 +103,7 @@ void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
       tr->start = i;
     }
     if (creatert(ci, *i, &rt)) {
-      fljit_rtvec_push(tr->rtinfo, rt);
+      flt_rtvec_push(tr->rtinfo, rt);
       tr->n++;
     }
     else {

@@ -23,19 +23,29 @@
  */
 
 /*
- * This module compiles the recorded trace into FLIR and then into machine code.
+ * Analyse the trace recording before the compilation.
  */
 
-#ifndef fl_jit_h
-#define fl_jit_h
+#ifndef fl_analysis_h
+#define fl_analysis_h
 
+#include "lprefix.h"
 #include "llimits.h"
 
-#include "fl_defs.h"
 #include "fl_trace.h"
 
-/* Compiles the trace recording. */
-void fljit_compile(JitTrace *tr);
+struct lua_State;
+
+/* Holds the information gathered during the analysis step. */
+struct JitAnalysis {
+  lu_byte *isphivalue;          /* nz if the register is a phi value */
+};
+
+/* Init the structure and performs the analysis step. */
+void fla_initanalysis(struct JitAnalysis *A, JitTrace *t);
+
+/* Destroy the structure. */
+void fla_closeanalysis(struct JitAnalysis *A, JitTrace *t);
 
 #endif
 

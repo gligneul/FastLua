@@ -22,20 +22,28 @@
  * IN THE SOFTWARE.
  */
 
-/*
- * This module compiles the recorded trace into FLIR and then into machine code.
- */
+#include "lprefix.h"
+#include "lmem.h"
+#include "lstate.h"
 
-#ifndef fl_jit_h
-#define fl_jit_h
-
-#include "llimits.h"
-
-#include "fl_defs.h"
 #include "fl_trace.h"
 
-/* Compiles the trace recording. */
-void fljit_compile(JitTrace *tr);
+TSCC_IMPL_VECTOR_WA(JitRTInfoVector, flt_rtvec_, struct JitRTInfo,
+    struct lua_State *, luaM_realloc_)
 
-#endif
+JitTrace *flt_createtrace(struct lua_State *L) {
+  JitTrace *tr = luaM_new(L, JitTrace);
+  tr->L = L;
+  tr->p = NULL;
+  tr->start = NULL;
+  tr->n = 0;
+  tr->rtinfo = flt_rtvec_createwa(L);
+  tr->completeloop = 0;
+  return tr;
+}
+
+void flt_destroytrace(JitTrace *tr) {
+  flt_rtvec_destroy(tr->rtinfo);
+  luaM_free(tr->L, tr);
+}
 

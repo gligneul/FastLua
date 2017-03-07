@@ -35,6 +35,7 @@ MYCFLAGS= -DFL_ENABLE -DFL_LOGGER -I`llvm-config --includedir`
 MYLDFLAGS= `llvm-config --ldflags`
 MYLIBS= `llvm-config --libs --system-libs`
 MYOBJS= \
+ fl_analysis.o \
  fl_asm_llvm.o \
  fl_defs.o \
  fl_instr.o \
@@ -43,6 +44,7 @@ MYOBJS= \
  fl_lib.o \
  fl_logger.o \
  fl_rec.o \
+ fl_trace.o \
  fl_vm.o
 
 # == END OF USER SETTINGS -- NO NEED TO CHANGE ANYTHING BELOW THIS LINE =======
@@ -150,6 +152,9 @@ solaris:
 
 # DO NOT DELETE
 
+fl_analysis.o: fl_analysis.c llimits.h lua.h luaconf.h lmem.h lobject.h \
+ fl_defs.h lopcodes.h fl_analysis.h lprefix.h fl_trace.h fl_containers.h \
+ fl_logger.h fl_tscc.h
 fl_asm_llvm.o: fl_asm_llvm.c lprefix.h lmem.h \
  llimits.h lua.h luaconf.h lobject.h fl_defs.h lopcodes.h lstate.h ltm.h \
  lzio.h fl_asm.h fl_ir.h fl_containers.h fl_logger.h fl_tscc.h fl_instr.h
@@ -162,15 +167,19 @@ fl_instr.o: fl_instr.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
 fl_ir.o: fl_ir.c lprefix.h lmem.h llimits.h lua.h luaconf.h fl_logger.h \
  fl_ir.h fl_containers.h fl_tscc.h
 fl_jitc.o: fl_jitc.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
- lopcodes.h lstate.h lobject.h fl_defs.h ltm.h lzio.h fl_asm.h fl_instr.h \
- fl_containers.h fl_logger.h fl_tscc.h fl_ir.h fl_jitc.h
+ lopcodes.h lstate.h lobject.h fl_defs.h ltm.h lzio.h fl_analysis.h \
+ fl_trace.h fl_containers.h fl_logger.h fl_tscc.h fl_asm.h fl_instr.h \
+ fl_ir.h fl_jitc.h
 fl_lib.o: fl_lib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
  fl_logger.h
 fl_logger.o: fl_logger.c lprefix.h lobject.h llimits.h lua.h luaconf.h \
  fl_defs.h lstate.h ltm.h lzio.h lmem.h fl_logger.h
 fl_rec.o: fl_rec.c lprefix.h lobject.h llimits.h lua.h luaconf.h \
- fl_defs.h lopcodes.h lstate.h ltm.h lzio.h lmem.h fl_jitc.h \
+ fl_defs.h lopcodes.h lstate.h ltm.h lzio.h lmem.h fl_jitc.h fl_trace.h \
  fl_containers.h fl_logger.h fl_tscc.h fl_rec.h
+fl_trace.o: fl_trace.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
+ lstate.h lobject.h fl_defs.h ltm.h lzio.h fl_trace.h fl_containers.h \
+ fl_logger.h fl_tscc.h
 fl_vm.o: fl_vm.c lprefix.h lobject.h llimits.h lua.h luaconf.h fl_defs.h \
  lstate.h ltm.h lzio.h lmem.h lvm.h ldo.h fl_logger.h fl_rec.h fl_vm.h \
  fl_instr.h lopcodes.h fl_containers.h fl_tscc.h
