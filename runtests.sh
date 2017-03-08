@@ -2,13 +2,17 @@
 
 echo "FL tests"
 for f in fltests/*; do
-  lua $f > luaresult.txt
-  src/lua $f > flresult.txt
+  echo -n "testing $f... "
+  lua $f &> luaresult.txt
+  src/lua $f &> flresult.txt
   if ! cmp --silent luaresult.txt flresult.txt; then
-    echo "test failed: $f"
+    echo "failed"
     echo "diff:"
     diff -u luaresult.txt flresult.txt
+    rm -f luaresult.txt flresult.txt
+    exit 1
   fi
+  echo "done"
 done
 rm -f luaresult.txt flresult.txt
 

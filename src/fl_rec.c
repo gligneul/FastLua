@@ -75,6 +75,14 @@ static int computebintoptag(int lhs, int rhs) {
     return LUA_TNUMFLT;
 }
 
+/* Verify if the forloop step is less then 0. */
+static int isforloopsteplt0(TValue *ra) {
+  if (ttisinteger(ra))
+    return ivalue(ra + 2) < 0;
+  else
+    return fltvalue(ra + 2) < 0;
+}
+
 /* Produce the runtime information about the instruction.
  * Return 1 if the instruction can be compiled, else return 0. */
 static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
@@ -105,6 +113,7 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
     case OP_FORLOOP: {
       int tag = ttype(RA(i));
       ti.u.forloop.type = tag;
+      ti.u.forloop.steplt0 = isforloopsteplt0(RA(i));
       readregister(tr, GETARG_A(i), tag, 1);
       readregister(tr, GETARG_A(i) + 1, tag, 0);
       readregister(tr, GETARG_A(i) + 2, tag, 0);
