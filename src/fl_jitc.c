@@ -85,10 +85,11 @@ static JitState *createjitstate(lua_State *L, TraceRecording *tr) {
   J->L = L;
   J->tr = tr;
   J->irfunc = ir_create(L);
-  J->preloop = ir_addbblock();
-  J->loopstart = J->loopend = ir_addbblock();
-  J->earlyexit = ir_currbblock() = ir_addbblock(); ir_return(ir_consti(1)); 
-  J->exits = exvec_createwa(L);
+  J->preloop = NULL;
+  J->loopstart = NULL;
+  J->loopend = NULL;
+  J->earlyexit = NULL;
+  J->exits = exvec_createwa(J->L);
   J->lstate = J->base = NULL;
   J->nregisters = tr->p->maxstacksize;
   J->current = luaM_newvector(L, J->nregisters, struct JitRegister);
@@ -136,7 +137,7 @@ static void loadregister(JitState *J, struct TraceRegister *treg, int regpos) {
   if (treg->checktag) {
     IRValue *tag = ir_load(IR_INT, J->base, addr + offsetof(TValue, tt_));
     IRBBlock *continuation = ir_insertbblock(J->preloop);
-    ir_cmp(IR_NE, tag, ir_consti(treg->tag), J->earlyexit, continuation);
+    ir_cmp(IR_NE, tag, ir_consti(treg->loadedtag), J->earlyexit, continuation);
     ir_currbblock() = J->preloop = continuation;
   }
   curr->tag = ir_consti(treg->tag);
@@ -149,12 +150,11 @@ static void createphivalues(JitState *J) {
   int i;
   for (i = 0; i < J->tr->p->maxstacksize; ++i) {
     struct TraceRegister *treg = J->tr->regs + i;
-    if (treg->loaded && treg->set) {
+    if (treg->set) {
       struct JitRegister *phi = J->phi + i;
       phi->value = ir_phi(converttag(treg->tag));
       phi->tag = ir_phi(IR_LONG);
       J->current[i] = *phi;
-      printf("reg %d -- phi %p\n", i, (void*)phi->value);
     }
   }
 }
@@ -215,7 +215,7 @@ static void setregister(JitState *J, int regpos, int tag, IRValue *value) {
 }
 
 /* Create an exit block and add it to the jit state. */
-static void addexit(JitState *J, IRBBlock *bb, int status) {
+static IRBBlock *addexit(JitState *J, int status) {
   int i, currindex = 0, ntostore = 0;
   struct JitExit e;
   /* compute the number of registers that will be stored */
@@ -223,7 +223,7 @@ static void addexit(JitState *J, IRBBlock *bb, int status) {
     if (J->tr->regs[i].set && J->current[i].value)
       ntostore++;
   /* create the exit */
-  e.bb = bb;
+  e.bb = ir_addbblock();
   e.ntostore = ntostore;
   e.indices = luaM_newvector(J->L, ntostore, int);
   e.values = luaM_newvector(J->L, ntostore, struct JitRegister);
@@ -236,6 +236,7 @@ static void addexit(JitState *J, IRBBlock *bb, int status) {
       e.values[currindex++] = J->current[i];
     }
   }
+  return e.bb;
 }
 
 /* Store the registers back in the Lua stack. */
@@ -266,7 +267,6 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
     case OP_ADD: {
       IRValue *rb = gettvalue(J, GETARG_B(i));
       IRValue *rc = gettvalue(J, GETARG_C(i));
-      printf("add %d:%p + %d:%p\n", GETARG_B(i), (void*)rb, GETARG_C(i), (void*)rc);
       /* TODO: type conversions (always performing int operations) */
       int resulttag = ti.u.binop.restag;
       IRValue *resultvalue = ir_binop(convertbinop(op), rb, rc);
@@ -281,7 +281,7 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
       IRValue *limit = gettvalue(J, ra + 1);
       IRValue *newidx;
       IRBBlock *keeplooping = ir_insertbblock(ir_currbblock());
-      IRBBlock *loopexit = ir_addbblock();
+      IRBBlock *loopexit = addexit(J, 0);
 
       if (ir_currbblock() == J->preloop) {
         IRBBlock *continuation = ir_insertbblock(J->preloop);
@@ -302,7 +302,6 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
       setregister(J, ra, expectedtag, newidx); /* internal index */
       setregister(J, ra + 3, expectedtag, newidx); /* external index */
 
-      addexit(J, loopexit, 0);
       break;
     }
     default:
@@ -313,7 +312,14 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
 
 /* Create the entry basic block.
  * This block should contain the loop invariants. */
-static void initentryblock(JitState *J) {
+static void initblocks(JitState *J) {
+  J->preloop = ir_addbblock();
+  J->loopstart = J->loopend = ir_addbblock();
+  J->earlyexit = ir_currbblock() = ir_addbblock();
+  ir_return(ir_consti(1)); 
+}
+
+static void compilepreloop(JitState *J) {
   int i;
   ir_currbblock() = J->preloop;
   J->lstate = ir_getarg(IR_PTR, 0);
@@ -322,7 +328,13 @@ static void initentryblock(JitState *J) {
     struct TraceRegister *treg = J->tr->regs + i;
     if (treg->loaded) loadregister(J, treg, i);
   }
-  compilebytecode(J, flt_rtvec_front(J->tr->instrs));
+  flt_rtvec_foreach(J->tr->instrs, ti, compilebytecode(J, ti));
+}
+
+static void compileloop(JitState *J) {
+  ir_currbblock() = J->loopstart;
+  createphivalues(J);
+  flt_rtvec_foreach(J->tr->instrs, ti, compilebytecode(J, ti));
 }
 
 /* Add the missing jumps in the basic blocks. */
@@ -336,26 +348,16 @@ static void addjmps(JitState *J) {
 }
 
 void fljit_compile(TraceRecording *tr) {
-  size_t i;
   JitState *J;
   if (!tr->completeloop) return;
   fllogln("starting jit compilation (%p)", tr->p);
   J = createjitstate(tr->L, tr);
-
-  initentryblock(J);
-
-  ir_currbblock() = J->loopstart;
-  createphivalues(J);
-  for (i = 1; i < flt_rtvec_size(J->tr->instrs); ++i) {
-    struct TraceInstr ti = flt_rtvec_get(J->tr->instrs, i);
-    compilebytecode(J, ti);
-  }
-  compilebytecode(J, flt_rtvec_front(J->tr->instrs));
-
+  initblocks(J);
+  compilepreloop(J);
+  compileloop(J);
   addjmps(J);
   linkphivalues(J);
   exvec_foreach(J->exits, e, closeexit(J, &e));
-
   ir_print();
   fllogln("ended jit compilation");
   flasm_compile(tr->L, tr->p, fli_instrindex(tr->p, tr->start), J->irfunc);
