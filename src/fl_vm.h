@@ -40,10 +40,11 @@ struct lua_TValue;
 void flvm_profile(struct lua_State *L, CallInfo *ci, int loopcount);
 
 #define flvm_execute() { \
-  int idx = fli_currentinstr(ci, cl->p); \
-  i = fli_getext(cl->p, idx)->original; \
+  Proto *p = cl->p; \
+  Instruction *currinstr = fli_currentinstr(ci, p); \
+  i = fli_getext(p, currinstr)->original; \
   ra = RA(i); \
-  switch (fli_getflop(cl->p, idx)) { \
+  switch (fli_getflop(currinstr)) { \
     case FLOP_FORPREP_PROF: { \
       TValue *init = ra; \
       TValue *plimit = ra + 1; \
@@ -87,18 +88,16 @@ void flvm_profile(struct lua_State *L, CallInfo *ci, int loopcount);
       break; \
     } \
     case FLOP_FORLOOP_EXEC: { \
-      Proto *p = cl->p; \
-      int instr = fli_currentinstr(ci, p); \
-      AsmFunction f = flasm_getfunction(p, instr); \
+      AsmFunction f = flasm_getfunction(p, currinstr); \
       switch (f(L, base)) { \
         case FL_SUCCESS: \
           break; \
         case FL_EARLY_EXIT: \
-          flasm_destroy(L, p, instr); \
+          flasm_destroy(L, p, currinstr); \
           goto l_forloop; \
           break; \
         case FL_SIDE_EXIT: \
-          flasm_destroy(L, p, instr); \
+          flasm_destroy(L, p, currinstr); \
           lua_assert(0); \
           break; \
         default: \

@@ -1,25 +1,25 @@
 /*
  * The MIT License (MIT)
- * 
+ *
  * Copyright (c) 2016 Gabriel de Quadros Ligneul
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #ifndef typesafeccontainers_h
@@ -33,6 +33,9 @@
 #ifndef TSCC_ITERATOR
 #define TSCC_ITERATOR(T) T##Iterator
 #endif
+
+/* Modifier for static functions */
+#define TSCC_INLINE static __inline
 
 /* Default reallocation function. */
 #define tscc_realloc_default(allocator, ptr, oldsize, newsize)                 \
@@ -60,6 +63,12 @@
   TSCC_DECL_VECTOR_WA(typename, pref, T, void *)
 
 #define TSCC_DECL_VECTOR_WA(typename, pref, T, AllocatorType)                  \
+  struct typename {                                                            \
+    AllocatorType allocator;                                                   \
+    T *buffer;                                                                 \
+    size_t size;                                                               \
+    size_t capacity;                                                           \
+  };                                                                           \
   typedef struct typename typename;                                            \
   typename *pref##create(void);                                                \
   typename *pref##createwa(AllocatorType allocator);                           \
@@ -72,6 +81,14 @@
   void pref##insert(typename *v, size_t pos, T value);                         \
   void pref##erase(typename *v, size_t pos);                                   \
   T pref##get(typename *v, size_t pos);                                        \
+                                                                               \
+  /* Get a reference to the value. */                                          \
+  TSCC_INLINE T *pref##getref(typename *v, size_t pos) {                       \
+    tscc_assert(v, "null vector");                                             \
+    tscc_assert(pos < v->size, "out of bounds");                               \
+    return v->buffer + pos;                                                    \
+  }                                                                            \
+                                                                               \
   void pref##set(typename *v, size_t pos, T value);                            \
   T pref##front(typename *v);                                                  \
   T pref##back(typename *v);                                                   \
@@ -83,12 +100,6 @@
 #define TSCC_IMPL_VECTOR_WA(typename, pref, T, AllocatorType,                  \
                             realloc_function)                                  \
                                                                                \
-  struct typename {                                                            \
-    AllocatorType allocator;                                                   \
-    T *buffer;                                                                 \
-    size_t size;                                                               \
-    size_t capacity;                                                           \
-  };                                                                           \
   static void pref##resizevector(typename *v, size_t newcapacity) {            \
     v->buffer =                                                                \
         realloc_function(v->allocator, v->buffer, v->capacity * sizeof(T),     \
@@ -577,5 +588,4 @@ static __inline int tscc_str_compare(const char *a, const char *b) {
 /* HashTable declaration end */
 
 #endif
-
 

@@ -35,7 +35,7 @@ void flvm_profile(struct lua_State *L, CallInfo *ci, int loopcount) {
   fll_assert(loopcount > 0, "flprof_profile: loopcount <= 0");
   if (!flrec_isrecording(L)) {
     Proto *p = getproto(ci->func);
-    l_mem i = fli_currentinstr(ci, p);
+    Instruction *i = fli_currentinstr(ci, p);
     int *count = &fli_getext(p, i)->u.count;
     fll_assert(*count < FL_JIT_THRESHOLD, "threshold already reached");
     *count += loopcount;

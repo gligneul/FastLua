@@ -46,7 +46,7 @@
 #define ASM_OPT_LEVEL 2
 
 /* Access the asmdata inside the proto. */
-#define asmdata(proto, i) (fli_getext(proto, i)->u.asmdata)
+#define asmdata(p, i) (fli_getext(p, i)->u.asmdata)
 
 /* Containers */
 TSCC_DECL_HASHTABLE_WA(AsmBBlockTable, asm_bbtab_, IRBBlock *, LLVMBasicBlockRef,
@@ -365,11 +365,11 @@ static int compile(struct lua_State *L, IRFunction *F,
  * Target independent section
  */
 
-AsmFunction flasm_getfunction(struct Proto *p, int i) {
+AsmFunction flasm_getfunction(struct Proto *p, Instruction *i) {
   return asmdata(p, i)->func;
 }
 
-void flasm_compile(struct lua_State *L, struct Proto *p, int i,
+void flasm_compile(struct lua_State *L, struct Proto *p, Instruction *i,
                    struct IRFunction *F) {
   fli_tojit(p, i);
   asmdata(p, i) = luaM_new(L, AsmInstrData);
@@ -385,7 +385,7 @@ void flasm_compile(struct lua_State *L, struct Proto *p, int i,
   }
 }
 
-void flasm_destroy(struct lua_State *L, struct Proto *p, int i) {
+void flasm_destroy(struct lua_State *L, struct Proto *p, Instruction *i) {
   AsmInstrData *data = asmdata(p, i);
   if (data->ee)
     LLVMDisposeExecutionEngine(data->ee);
@@ -395,9 +395,6 @@ void flasm_destroy(struct lua_State *L, struct Proto *p, int i) {
 }
 
 void flasm_closeproto(struct lua_State *L, struct Proto *p) {
-  int i;
-  for (i = 0; i < p->sizecode; ++i)
-    if (fli_isexec(p, i))
-      flasm_destroy(L, p, i);
+  fli_foreach(p, i, { if (fli_isexec(i)) flasm_destroy(L, p, i); });
 }
 

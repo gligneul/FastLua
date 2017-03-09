@@ -32,54 +32,48 @@
 
 #define flivec(p) (p->fl.instr)
 
-TSCC_IMPL_VECTOR_WA(FLInstrExtVector, fliv_, FLInstrExt, struct lua_State *,
-    luaM_realloc_)
+TSCC_IMPL_VECTOR_WA(FLInstrExtVector, fliv_, struct FLInstrExt,
+    struct lua_State *, luaM_realloc_)
 
-void fli_loadproto(struct Proto *p) {
-  int i;
-  for (i = 0; i < p->sizecode; ++i)
-    fli_toprof(p, i);
+struct FLInstrExt *fli_getext(struct Proto *p, Instruction *i) {
+  fll_assert(fli_isfl(i), "invalid opcode");
+  return fliv_getref(flivec(p), fli_getextindex(i));
 }
 
-FLInstrExt *fli_getext(struct Proto *p, int i) {
-  fll_assert(fli_isfl(p, i), "invalid opcode");
-  return fliv_data(flivec(p)) + fli_getextindex(p, i);
-}
-
-void fli_reset(struct Proto *p, int i) {
-  size_t ei, removedei;
-  fll_assert(fli_isfl(p, i), "invalid opcode");
-  removedei = fli_getextindex(p, i);
-  p->code[i] = fli_getext(p, i)->original;
-  fliv_erase(flivec(p), removedei);
-  for (ei = removedei; ei < fliv_size(flivec(p)); ++ei) {
-    FLInstrExt ext = fliv_get(flivec(p), ei);
-    fli_setextindex(p, ext.index, ei);
+void fli_reset(struct Proto *p, Instruction *i) {
+  size_t extidx, removed;
+  fll_assert(fli_isfl(i), "invalid opcode");
+  removed = fli_getextindex(i);
+  *i = fli_getext(p, i)->original;
+  fliv_erase(flivec(p), removed);
+  for (extidx = removed; extidx < fliv_size(flivec(p)); ++extidx) {
+    struct FLInstrExt *ext = fliv_getref(flivec(p), extidx);
+    fli_setextindex(ext->address, extidx);
   }
 }
 
 /* Convert a instruction to a fl instruction */
-static void convertinstr(struct Proto *p, int i, enum FLOpcode flop) {
+static void convertinstr(struct Proto *p, Instruction *i, enum FLOpcode flop) {
   size_t extidx = fliv_size(flivec(p));
-  FLInstrExt ext;
-  memset(&ext, 0, sizeof(FLInstrExt));
-  ext.original = p->code[i];
-  ext.index = i;
+  struct FLInstrExt ext;
+  memset(&ext, 0, sizeof(struct FLInstrExt));
+  ext.original = *i;
+  ext.address = i;
   fliv_push(flivec(p), ext);
-  SET_OPCODE(p->code[i], OP_FLVM);
-  fli_setflop(p, i, flop);
-  fli_setextindex(p, i, extidx);
+  SET_OPCODE(*i, OP_FLVM);
+  fli_setflop(i, flop);
+  fli_setextindex(i, extidx);
 }
 
-void fli_toprof(struct Proto *p, int i) {
-  switch (GET_OPCODE(p->code[i])) {
+void fli_toprof(struct Proto *p, Instruction *i) {
+  switch (GET_OPCODE(*i)) {
     case OP_FORPREP:    convertinstr(p, i, FLOP_FORPREP_PROF); break;
     default: break;
   }
 }
 
-void fli_tojit(struct Proto *p, int i) {
-  switch (GET_OPCODE(p->code[i])) {
+void fli_tojit(struct Proto *p, Instruction *i) {
+  switch (GET_OPCODE(*i)) {
     case OP_FORLOOP:    convertinstr(p, i, FLOP_FORLOOP_EXEC); break;
     default: break;
   }

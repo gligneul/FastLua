@@ -360,7 +360,7 @@ void fljit_compile(TraceRecording *tr) {
   exvec_foreach(J->exits, e, closeexit(J, &e));
   ir_print();
   fllogln("ended jit compilation");
-  flasm_compile(tr->L, tr->p, fli_instrindex(tr->p, tr->start), J->irfunc);
+  flasm_compile(tr->L, tr->p, (Instruction*)tr->start, J->irfunc);
   destroyjitstate(J);
 }
 

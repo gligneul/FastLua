@@ -25,12 +25,12 @@
 /*
  * Some Lua instructions are replaced by FL instructions (eg. for profiling and
  * execution of jited code).
- * The original opcode is replaced by the OP_FLVM opcode and a FL opcode is
- * stored in the A argument.
+ * The original opcode is replaced by the OP_FLVM opcode and a new FL opcode is
+ * stored in the A argument of the original instruction.
  * Aditional information about the instruction is stored in the FLInstrExt
  * struct.
  * The extension vector only contains data about the converted instructions.
- * Therefore, the B argument is used to store the index of the instruction's
+ * Finaly, the B argument is used to store the index of the instruction's
  * extension.
  */
 
@@ -38,9 +38,7 @@
 #define fl_instr_h
 
 #include "llimits.h"
-#include "lopcodes.h"
 
-#include "fl_defs.h"
 #include "fl_containers.h"
 
 struct Proto;
@@ -52,48 +50,58 @@ enum FLOpcode {
 };
 
 /* Extra information about a FL instruction. */
-typedef struct FLInstrExt {
+struct FLInstrExt {
   Instruction original;             /* original instruction */
-  int index;                        /* instruction index in p->code */
+  Instruction *address;             /* original instruction address */
   union {
     int count;                      /* number of times executed */
     struct AsmInstrData *asmdata;   /* compiled function */
   } u;
-} FLInstrExt;
+};
 
 /* struct FLInstrExt container. */
-TSCC_DECL_VECTOR_WA(FLInstrExtVector, fliv_, FLInstrExt,
+TSCC_DECL_VECTOR_WA(FLInstrExtVector, fliv_, struct FLInstrExt,
     struct lua_State *)
 
 /* Obtain the instruction index given the address. */
-#define fli_instrindex(p, addr) ((addr) - (p)->code)
+#define fli_instrindex(p, addr)     ((addr) - (p)->code)
 
-/* Obtain the current instruction index. */
-#define fli_currentinstr(ci, p) fli_instrindex(p, ci->u.l.savedpc - 1)
+/* Obtain a instruction given the proto and the index. */
+#define fli_getinstr(p, idx)        (p->code + idx)
+
+/* Obtain the current instruction. */
+#define fli_currentinstr(ci, p)     (Instruction *)(ci->u.l.savedpc - 1)
+
+/* Foreach instruction in the proto. */
+#define fli_foreach(p, i, cmd) \
+  do { \
+    Instruction *i = p->code; \
+    Instruction *last##i = i + p->sizecode; \
+    for (; i != last##i; ++i) { \
+      cmd; \
+    } \
+  } while (0)
 
 /* Manipulate the fl fields in the Lua instruction. */
-#define fli_getflop(p, i)           (GETARG_A(p->code[i]))
-#define fli_setflop(p, i, op)       (SETARG_A(p->code[i], op))
-#define fli_getextindex(p, i)       (GETARG_B(p->code[i]))
-#define fli_setextindex(p, i, idx)  (SETARG_B(p->code[i], idx))
-#define fli_isfl(p, i)              (GET_OPCODE(p->code[i]) == OP_FLVM)
-#define fli_isexec(p, i) \
-    (fli_isfl(p, i) && fli_getflop(p, i) >= FLOP_FORLOOP_EXEC)
-
-/* Initialize the profiling instructions in the Lua proto. */
-void fli_loadproto(struct Proto *p);
+#define fli_getflop(i)              (GETARG_A(*i))
+#define fli_setflop(i, op)          (SETARG_A(*i, op))
+#define fli_getextindex(i)          (GETARG_B(*i))
+#define fli_setextindex(i, idx)     (SETARG_B(*i, idx))
+#define fli_isfl(i)                 (GET_OPCODE(*i) == OP_FLVM)
+#define fli_isexec(i) \
+    (fli_isfl(i) && fli_getflop(i) >= FLOP_FORLOOP_EXEC)
 
 /* Obtain the instruction's extension. */
-FLInstrExt *fli_getext(struct Proto *p, int i);
+struct FLInstrExt *fli_getext(struct Proto *p, Instruction *i);
 
 /* Convert an instruction back to the original one. */
-void fli_reset(struct Proto *p, int i);
+void fli_reset(struct Proto *p, Instruction *i);
 
 /* Convert an instruction to the profiling one. */
-void fli_toprof(struct Proto *p, int i);
+void fli_toprof(struct Proto *p, Instruction *i);
 
 /* Convert an instruction to the jit one. */
-void fli_tojit(struct Proto *p, int i);
+void fli_tojit(struct Proto *p, Instruction *i);
 
 #endif
 

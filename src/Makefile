@@ -155,8 +155,8 @@ fl_asm_llvm.o: fl_asm_llvm.c lprefix.h lmem.h \
  llimits.h lua.h luaconf.h lobject.h fl_defs.h lopcodes.h lstate.h ltm.h \
  lzio.h fl_asm.h fl_ir.h fl_containers.h fl_logger.h fl_tscc.h fl_instr.h
 fl_defs.o: fl_defs.c lprefix.h lmem.h llimits.h lua.h luaconf.h lobject.h \
- fl_defs.h lstate.h ltm.h lzio.h fl_asm.h fl_instr.h lopcodes.h \
- fl_containers.h fl_logger.h fl_tscc.h
+ fl_defs.h lstate.h ltm.h lzio.h fl_asm.h fl_instr.h fl_containers.h \
+ fl_logger.h fl_tscc.h
 fl_instr.o: fl_instr.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
  lobject.h fl_defs.h lopcodes.h fl_instr.h fl_containers.h fl_logger.h \
  fl_tscc.h
@@ -177,7 +177,7 @@ fl_trace.o: fl_trace.c lprefix.h lmem.h llimits.h lua.h luaconf.h \
  fl_logger.h fl_tscc.h
 fl_vm.o: fl_vm.c lprefix.h lobject.h llimits.h lua.h luaconf.h fl_defs.h \
  lstate.h ltm.h lzio.h lmem.h lvm.h ldo.h fl_logger.h fl_rec.h fl_vm.h \
- fl_instr.h lopcodes.h fl_containers.h fl_tscc.h
+ fl_instr.h fl_containers.h fl_tscc.h
 lapi.o: lapi.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
  lobject.h fl_defs.h ltm.h lzio.h lmem.h ldebug.h ldo.h lfunc.h lgc.h \
  lstring.h ltable.h lundump.h lvm.h

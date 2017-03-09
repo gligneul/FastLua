@@ -50,14 +50,14 @@ enum AsmReturnCode {
 typedef struct AsmInstrData AsmInstrData;
 
 /* Obtain the function given the instruction. */
-AsmFunction flasm_getfunction(struct Proto *p, int pc);
+AsmFunction flasm_getfunction(struct Proto *p, Instruction *i);
 
 /* Compile a function and add it to the proto. */
-void flasm_compile(struct lua_State *L, struct Proto *p, int i,
+void flasm_compile(struct lua_State *L, struct Proto *p, Instruction *i,
                    struct IRFunction *F);
 
 /* Delete a function and change the opcode to the default one. */
-void flasm_destroy(struct lua_State *L, struct Proto *p, int i);
+void flasm_destroy(struct lua_State *L, struct Proto *p, Instruction *i);
 
 /* Destroy all asm functions in the proto. */
 void flasm_closeproto(struct lua_State *L, struct Proto *p);

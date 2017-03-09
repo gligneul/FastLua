@@ -51,6 +51,6 @@ void fl_closeproto(struct lua_State *L, struct Proto *p) {
 
 void fl_loadproto(struct lua_State *L, struct Proto *p) {
   p->fl.instr = fliv_createwa(L);
-  fli_loadproto(p);
+  fli_foreach(p, i, fli_toprof(p, i));
 }
 
