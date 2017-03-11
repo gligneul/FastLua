@@ -194,17 +194,14 @@ static void compilevalue(AsmState *A, IRValue *v) {
   LLVMValueRef llvmval = NULL;
   switch (v->instr) {
     case IR_CONST: {
-      switch (v->type) {
-        case IR_LONG:
-          llvmval = LLVMConstInt(llvmint(), v->args.konst.i, 1);
-          break;
-        case IR_FLOAT:
-          llvmval = LLVMConstReal(llvmflt(), v->args.konst.f);
-          break;
-        default:
-          fll_error("fl_asm::compilevalue: invalid constant type");
-          break;
+      if (ir_isintt(v->type)) {
+        LLVMTypeRef llvmtype = converttype(v->type);
+        llvmval = LLVMConstInt(llvmtype, v->args.konst.i, 1);
       }
+      else if (v->type == IR_FLOAT)
+        llvmval = LLVMConstReal(llvmflt(), v->args.konst.f);
+      else
+        fll_error("invalid constant type");
       break;
     }
     case IR_GETARG: {
@@ -220,13 +217,11 @@ static void compilevalue(AsmState *A, IRValue *v) {
       LLVMValueRef addr = LLVMBuildGEP(A->builder, mem, indices, 1, "");
       LLVMValueRef ptr = LLVMBuildPointerCast(A->builder, addr, type, "");
       llvmval = LLVMBuildLoad(A->builder, ptr, "");
-      if (ir_isintt(irtype) && LLVMTypeOf(llvmval) != llvmint())
-        llvmval = LLVMBuildIntCast(A->builder, llvmval, llvmint(), "");
       break;
     }
     case IR_STORE: {
       LLVMValueRef mem = getllvmvalue(A, v->args.store.mem);
-      enum IRType irtype = v->args.store.type;
+      enum IRType irtype = v->args.store.v->type;
       LLVMTypeRef type = converttype(irtype);
       LLVMTypeRef ptrtype = llvmptrof(type);
       LLVMValueRef indices[] = {
@@ -234,8 +229,6 @@ static void compilevalue(AsmState *A, IRValue *v) {
       LLVMValueRef addr = LLVMBuildGEP(A->builder, mem, indices, 1, "");
       LLVMValueRef ptr = LLVMBuildPointerCast(A->builder, addr, ptrtype, "");
       LLVMValueRef val = getllvmvalue(A, v->args.store.v);
-      if (ir_isintt(irtype) && type != llvmint())
-        val = LLVMBuildIntCast(A->builder, val, type, "");
       llvmval = LLVMBuildStore(A->builder, val, ptr);
       break;
     }

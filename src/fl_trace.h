@@ -38,8 +38,7 @@ struct lua_State;
 struct TraceInstr {
   Instruction instr;            /* instruction */
   union {                       /* specific fields for each opcode */
-    struct { lu_byte type; lu_byte steplt0; } forloop;
-    struct { lu_byte restag; } binop;
+    struct { lu_byte steplt0; } forloop;
   } u;
 };
 

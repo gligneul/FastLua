@@ -55,10 +55,7 @@ typedef struct IRBBlock IRBBlock;
 typedef struct IRValue IRValue;
 typedef struct IRPhiNode IRPhiNode;
 
-/* All integer values are promoted to word-size (ptr-size) integers. */
 typedef l_mem IRInt;
-
-/* Float numbers are based on lua number. */
 typedef lua_Number IRFloat;
 
 /* Containers */
@@ -150,7 +147,7 @@ struct IRValue {
     union IRConstant konst;
     struct { int n; } getarg;
     struct { IRValue *mem; size_t offset; enum IRType type; } load;
-    struct { IRValue *mem, *v; size_t offset; enum IRType type; } store;
+    struct { IRValue *mem, *v; size_t offset; } store;
     struct { enum IRBinOp op; IRValue *l, *r; } binop;
     struct { enum IRCmpOp op; IRValue *l, *r;
              IRBBlock *truebr, *falsebr; } cmp;
@@ -200,24 +197,23 @@ size_t _ir_nvalues(IRFunction *F);
 #define ir_foreach_bb(bb, _cmd) ir_bbvec_foreach(_irfunc->bblocks, bb, _cmd)
 
 /* Add a value to the current basic block and return it. */
-IRValue *_ir_consti(IRFunction *F, IRInt i);
+IRValue *_ir_consti(IRFunction *F, IRInt i, enum IRType type);
 IRValue *_ir_constf(IRFunction *F, IRFloat f);
 IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n);
 IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem, int offset);
-IRValue *_ir_store(IRFunction *F, enum IRType type, IRValue *mem,
-                   IRValue *val, int offset);
+IRValue *_ir_store(IRFunction *F, IRValue *mem, IRValue *val, int offset);
 IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r);
 IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
                  IRBBlock *truebr, IRBBlock *falsebr);
 IRValue *_ir_jmp(IRFunction *F, IRBBlock *bb);
 IRValue *_ir_return(IRFunction *F, IRValue *v);
 IRValue *_ir_phi(IRFunction *F, enum IRType type);
-#define ir_consti(i) _ir_consti(_irfunc, i)
+#define ir_consti(i, type) _ir_consti(_irfunc, i, type)
 #define ir_constf(f) _ir_constf(_irfunc, f)
 #define ir_getarg(type, n) _ir_getarg(_irfunc, type, n)
 #define ir_load(type, mem, offset) _ir_load(_irfunc, type, mem, offset)
-#define ir_store(type, mem, val, offset) \
-    _ir_store(_irfunc, type, mem, val, offset)
+#define ir_store(mem, val, offset) \
+    _ir_store(_irfunc, mem, val, offset)
 #define ir_binop(op, l, r) _ir_binop(_irfunc, op, l, r)
 #define ir_cmp(op, l, r, truebr, falsebr) \
     _ir_cmp(_irfunc, op, l, r, truebr, falsebr)

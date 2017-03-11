@@ -118,8 +118,8 @@ static IRValue *createvalue(IRFunction *F, enum IRType type,
   return v;
 }
 
-IRValue *_ir_consti(IRFunction *F, IRInt i) {
-  IRValue *v = createvalue(F, IR_LONG, IR_CONST);
+IRValue *_ir_consti(IRFunction *F, IRInt i, enum IRType type) {
+  IRValue *v = createvalue(F, type, IR_CONST);
   v->args.konst.i = i;
   return v;
 }
@@ -138,24 +138,18 @@ IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n) {
 
 IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem,
                   int offset) {
-  /* promote integers to intptr */
-  enum IRType finaltype = ir_isintt(type) ? IR_LONG : type;
-  IRValue *v = createvalue(F, finaltype, IR_LOAD);
+  IRValue *v = createvalue(F, type, IR_LOAD);
   v->args.load.mem = mem;
   v->args.load.offset = offset;
   v->args.load.type = type;
   return v;
 }
 
-IRValue *_ir_store(IRFunction *F, enum IRType type, IRValue *mem,
-                   IRValue *val, int offset) {
+IRValue *_ir_store(IRFunction *F, IRValue *mem, IRValue *val, int offset) {
   IRValue *v = createvalue(F, IR_VOID, IR_STORE);
   v->args.store.mem = mem;
   v->args.store.v = val;
   v->args.store.offset = offset;
-  v->args.store.type = type;
-  fll_assert(val->type == type || (val->type == IR_LONG && ir_isintt(type)),
-    "ir_store: type doesn't match");
   fll_assert(mem->type == IR_PTR, "ir_store: mem ins't a pointer");
   return v;
 }
@@ -293,7 +287,9 @@ static void printconst(enum IRType type, union IRConstant k) {
   printtype(type);
   fllog(" ");
   switch (type) {
-    case IR_LONG:   fllog("%td", k.i); break;
+    case IR_CHAR: case IR_SHORT: case IR_INT: case IR_LUAINT: case IR_LONG:
+      fllog("%td", k.i);
+      break;
     case IR_PTR:    fllog("%p", k.p); break;
     case IR_FLOAT:  fllog("%f", k.f); break;
     default: fll_error("ir::printconst: invalid type"); break;
@@ -371,8 +367,6 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
       if (offset > 0)
         fllog(")");
       fllog(" <- ");
-      printtype(v->args.store.type);
-      fllog(" ");
       printvalue(v->args.store.v, valindices);
       break;
     }

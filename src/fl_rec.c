@@ -102,7 +102,6 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
     case OP_MUL: {
       TValue *rkb = RKB(i), *rkc = RKC(i);
       int resulttag = computebintoptag(ttype(rkb), ttype(rkc));
-      ti.u.binop.restag = resulttag;
       readrk(tr, GETARG_B(i), ttype(rkb), 1);
       readrk(tr, GETARG_C(i), ttype(rkc), 1);
       setregister(tr, GETARG_A(i), resulttag);
@@ -112,7 +111,6 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
     }
     case OP_FORLOOP: {
       int tag = ttype(RA(i));
-      ti.u.forloop.type = tag;
       ti.u.forloop.steplt0 = isforloopsteplt0(RA(i));
       readregister(tr, GETARG_A(i), tag, 1);
       readregister(tr, GETARG_A(i) + 1, tag, 0);
