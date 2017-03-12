@@ -248,7 +248,14 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
     case OP_ADD: {
       IRValue *rb = gettvalue(J, GETARG_B(i));
       IRValue *rc = gettvalue(J, GETARG_C(i));
-      /* TODO: type conversions (always performing int operations) */
+      if (rb->type == IR_LUAINT && rc->type == IR_FLOAT) {
+        rb = ir_cast(rb, IR_FLOAT);
+        setregister(J, GETARG_B(i), rb);
+      }
+      else if (rb->type == IR_FLOAT && rc->type == IR_LUAINT) {
+        rc = ir_cast(rc, IR_FLOAT);
+        setregister(J, GETARG_B(i), rc);
+      }
       IRValue *resultvalue = ir_binop(convertbinop(op), rb, rc);
       setregister(J, GETARG_A(i), resultvalue);
       break;

@@ -232,6 +232,24 @@ static void compilevalue(AsmState *A, IRValue *v) {
       llvmval = LLVMBuildStore(A->builder, val, ptr);
       break;
     }
+    case IR_CAST: {
+      enum IRType fromtype = v->args.cast.v->type;
+      enum IRType desttype = v->args.cast.type;
+      LLVMValueRef val = getllvmvalue(A, v->args.cast.v);
+      LLVMTypeRef llvmtype = converttype(desttype);
+      LLVMValueRef (*castfunc)(LLVMBuilderRef, LLVMValueRef, LLVMTypeRef,
+          const char *) = 0;
+      if (ir_isintt(fromtype) && ir_isintt(desttype))
+        castfunc = LLVMBuildIntCast;
+      else if (ir_isintt(fromtype) && desttype == IR_FLOAT)
+        castfunc = LLVMBuildSIToFP;
+      else if (fromtype == IR_FLOAT && ir_isintt(desttype))
+        castfunc = LLVMBuildFPToSI;
+      else
+        fll_error("invalid cast");
+      llvmval = castfunc(A->builder, val, llvmtype, "");
+      break;
+    }
     case IR_BINOP: {
       LLVMValueRef l = getllvmvalue(A, v->args.binop.l);
       LLVMValueRef r = getllvmvalue(A, v->args.binop.r);

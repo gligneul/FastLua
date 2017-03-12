@@ -154,6 +154,13 @@ IRValue *_ir_store(IRFunction *F, IRValue *mem, IRValue *val, int offset) {
   return v;
 }
 
+IRValue *_ir_cast(IRFunction *F, IRValue *val, enum IRType type) {
+  IRValue *v = createvalue(F, type, IR_CAST);
+  v->args.cast.v = val;
+  v->args.cast.type = type;
+  return v;
+}
+
 IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r) {
   IRValue *v = createvalue(F, l->type, IR_BINOP);
   v->args.binop.op = op;
@@ -201,68 +208,6 @@ void _ir_addphinode(IRFunction *F, IRValue *v, IRValue *value,
   ir_phivec_push(v->args.phi, phi);
   fll_assert(v->instr == IR_PHI, "ir_addphinode: value ins't a phi");
   fll_assert(v->type == value->type, "ir_addphinode: type mismatch");
-}
-
-void _ir_move(IRFunction *F, IRBBlock *bb, size_t from, size_t to) {
-  IRValue *v = ir_valvec_get(bb->values, from);
-  (void)F;
-  ir_valvec_erase(bb->values, from);
-  ir_valvec_insert(bb->values, to, v);
-}
-
-/* Replace helper */
-#define replacehelper(cell, old, new) \
-  do { if (cell == old) cell = new; } while (0)
-
-static void replacerec(IRFunction *F, IRBBlock *bb, IRValue *old, IRValue *new,
-                       IRBBlockTable *visited)
-{
-  if (ir_bbtab_contains(visited, bb))
-    return;
-  else
-    ir_bbtab_insert(visited, bb, 1);
-  ir_valvec_foreach(bb->values, v, {
-    if (v == old || v == new)
-      continue;
-    switch (v->instr) {
-      case IR_CONST: case IR_GETARG: case IR_JMP:
-        /* do nothing */
-        break;
-      case IR_LOAD:
-        replacehelper(v->args.load.mem, old, new);
-        break;
-      case IR_STORE:
-        replacehelper(v->args.store.mem, old, new);
-        replacehelper(v->args.store.v, old, new);
-        break;
-      case IR_BINOP:
-        replacehelper(v->args.binop.l, old, new);
-        replacehelper(v->args.binop.r, old, new);
-        break;
-      case IR_CMP:
-        replacehelper(v->args.cmp.l, old, new);
-        replacehelper(v->args.cmp.r, old, new);
-        replacerec(F, v->args.cmp.truebr, old, new, visited);
-        replacerec(F, v->args.cmp.falsebr, old, new, visited);
-        break;
-      case IR_RET:
-        replacehelper(v->args.ret.v, old, new);
-        break;
-      case IR_PHI:
-        ir_phivec_foreach(v->args.phi, phi, {
-          replacehelper(phi->value, old, new);
-          replacerec(F, phi->bblock, old, new, visited);
-        });
-        break;
-    }
-  });
-}
-
-void _ir_replacevalue(IRFunction *F, IRBBlock *bb, IRValue *old, IRValue *new) {
-  size_t n = ir_bbvec_size(F->bblocks);
-  IRBBlockTable *visited = ir_bbtab_createwa(n, F->L);
-  replacerec(F, bb, old, new, visited);
-  ir_bbtab_destroy(visited);
 }
 
 /*
@@ -368,6 +313,15 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
         fllog(")");
       fllog(" <- ");
       printvalue(v->args.store.v, valindices);
+      break;
+    }
+    case IR_CAST: {
+      fllog("cast ");
+      printtype(v->args.cast.type);
+      fllog(" <- ");
+      printtype(v->args.cast.v->type);
+      fllog(" ");
+      printvalue(v->args.cast.v, valindices);
       break;
     }
     case IR_BINOP: {
