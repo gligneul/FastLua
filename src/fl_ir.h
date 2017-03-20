@@ -59,16 +59,15 @@ typedef l_mem IRInt;
 typedef lua_Number IRFloat;
 
 /* Containers */
-TSCC_DECL_VECTOR_WA(IRBBlockVector, ir_bbvec_, IRBBlock *, struct lua_State *)
+TSCC_DECL_VECTOR(IRBBlockVector, ir_bbvec_, IRBBlock *)
 #define ir_bbvec_foreach(vec, val, _cmd) \
     TSCC_VECTOR_FOREACH(ir_bbvec_, vec, IRBBlock *, val, _cmd)
 
-TSCC_DECL_VECTOR_WA(IRValueVector, ir_valvec_, IRValue *, struct lua_State *)
+TSCC_DECL_VECTOR(IRValueVector, ir_valvec_, IRValue *)
 #define ir_valvec_foreach(vec, val, _cmd) \
     TSCC_VECTOR_FOREACH(ir_valvec_, vec, IRValue *, val, _cmd)
 
-TSCC_DECL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, IRPhiNode *,
-    struct lua_State *)
+TSCC_DECL_VECTOR(IRPhiNodeVector, ir_phivec_, IRPhiNode *)
 #define ir_phivec_foreach(vec, val, _cmd) \
     TSCC_VECTOR_FOREACH(ir_phivec_, vec, IRPhiNode *, val, _cmd)
 
@@ -129,13 +128,13 @@ union IRConstant {
 struct IRFunction {
   struct lua_State *L;              /* lua state */
   IRBBlock *currbb;                 /* current basic block */
-  IRBBlockVector *bblocks;          /* list of basic blocks */
+  IRBBlockVector bblocks;          /* list of basic blocks */
 };
 
 /* IRBBlock
  * Basicaly a list of values. */
 struct IRBBlock {
-  IRValueVector *values;
+  IRValueVector values;
 };
 
 /* IRValue
@@ -155,7 +154,7 @@ struct IRValue {
              IRBBlock *truebr, *falsebr; } cmp;
     IRBBlock *jmp;
     struct { IRValue *v; } ret;
-    IRPhiNodeVector *phi;
+    IRPhiNodeVector phi;
   } args;
 };
 
@@ -185,7 +184,7 @@ IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb);
 #define ir_currbblock() (_irfunc->currbb)
 
 /* Get the number of basic blocks */
-#define _ir_nbblocks(F) (ir_bbvec_size(F->bblocks))
+#define _ir_nbblocks(F) (ir_bbvec_size(&F->bblocks))
 #define ir_nbblocks() _ir_nbblocks(_irfunc)
 
 /* Get the total number of commands */
@@ -193,7 +192,7 @@ size_t _ir_nvalues(IRFunction *F);
 #define ir_nvalues() _ir_nvalues(_irfunc)
 
 /* Iterates through the basic blocks */
-#define ir_foreach_bb(bb, _cmd) ir_bbvec_foreach(_irfunc->bblocks, bb, _cmd)
+#define ir_foreach_bb(bb, _cmd) ir_bbvec_foreach(&_irfunc->bblocks, bb, _cmd)
 
 /* Add a value to the current basic block and return it. */
 IRValue *_ir_consti(IRFunction *F, IRInt i, enum IRType type);

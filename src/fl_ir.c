@@ -32,76 +32,66 @@
 #include "fl_ir.h"
 
 /* Conteiners implementation */
-TSCC_IMPL_VECTOR_WA(IRBBlockVector, ir_bbvec_, IRBBlock *, struct lua_State *,
-    luaM_realloc_)
-TSCC_IMPL_VECTOR_WA(IRValueVector, ir_valvec_, IRValue *, struct lua_State *,
-    luaM_realloc_)
-TSCC_IMPL_VECTOR_WA(IRPhiNodeVector, ir_phivec_, IRPhiNode *,
-    struct lua_State *, luaM_realloc_)
-TSCC_DECL_HASHTABLE_WA(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
-    struct lua_State *)
-TSCC_IMPL_HASHTABLE_WA(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
-    tscc_ptr_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
-TSCC_DECL_HASHTABLE_WA(IRValueTable, ir_valtab_, IRValue *, int,
-    struct lua_State *)
-TSCC_IMPL_HASHTABLE_WA(IRValueTable, ir_valtab_, IRValue *, int,
-    tscc_ptr_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
+TSCC_DECL_HASHTABLE(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
+    tscc_ptr_hashfunc, tscc_general_compare)
+TSCC_DECL_HASHTABLE(IRValueTable, ir_valtab_, IRValue *, int,
+    tscc_ptr_hashfunc, tscc_general_compare)
 
 IRFunction *ir_create(struct lua_State *L) {
   IRFunction *F = luaM_new(L, IRFunction);
   F->L = L;
   F->currbb = NULL;
-  F->bblocks = ir_bbvec_createwa(L);
+  ir_bbvec_create(&F->bblocks, L);
   return F;
 }
 
 void ir_destroy(IRFunction *F) {
   lua_State *L = F->L;
-  ir_bbvec_foreach(F->bblocks, bb, {
-    ir_valvec_foreach(bb->values, v, {
+  ir_bbvec_foreach(&F->bblocks, bb, {
+    ir_valvec_foreach(&bb->values, v, {
       if (v->instr == IR_PHI) {
-        ir_phivec_foreach(v->args.phi, phi, luaM_free(L, phi));
-        ir_phivec_destroy(v->args.phi);
+        ir_phivec_foreach(&v->args.phi, phi, luaM_free(L, phi));
+        ir_phivec_destroy(&v->args.phi);
       }
       luaM_free(L, v);
     });
-    ir_valvec_destroy(bb->values);
+    ir_valvec_destroy(&bb->values);
     luaM_free(L, bb);
   });
-  ir_bbvec_destroy(F->bblocks);
+  ir_bbvec_destroy(&F->bblocks);
   luaM_free(L, F);
 }
 
 /* Creates a basic block */
 static IRBBlock *createbblock(IRFunction *F) {
   IRBBlock *bb = luaM_new(F->L, IRBBlock);
-  bb->values = ir_valvec_createwa(F->L);
+  ir_valvec_create(&bb->values, F->L);
   return bb;
 }
 
 IRBBlock *_ir_addbblock(IRFunction *F) {
   IRBBlock *bb = createbblock(F);
-  ir_bbvec_push(F->bblocks, bb);
+  ir_bbvec_push(&F->bblocks, bb);
   return bb;
 }
 
 IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb) {
   IRBBlock *bb = createbblock(F);
   size_t pos = 1;
-  ir_bbvec_foreach(F->bblocks, thisbb, {
+  ir_bbvec_foreach(&F->bblocks, thisbb, {
     if (thisbb == prevbb)
       break;
     else
       pos++;
   });
-  ir_bbvec_insert(F->bblocks, pos, bb);
+  ir_bbvec_insert(&F->bblocks, pos, bb);
   return bb;
 }
 
 size_t _ir_nvalues(IRFunction *F) {
   size_t n = 0;
-  ir_bbvec_foreach(F->bblocks, bb, {
-    n += ir_valvec_size(bb->values);
+  ir_bbvec_foreach(&F->bblocks, bb, {
+    n += ir_valvec_size(&bb->values);
   });
   return n;
 }
@@ -114,7 +104,7 @@ static IRValue *createvalue(IRFunction *F, enum IRType type,
   v->type = type;
   v->instr = instr;
   v->bblock = bb;
-  ir_valvec_push(bb->values, v);
+  ir_valvec_push(&bb->values, v);
   return v;
 }
 
@@ -196,7 +186,7 @@ IRValue *_ir_return(IRFunction *F, IRValue *val) {
 
 IRValue *_ir_phi(IRFunction *F, enum IRType type) {
   IRValue *v = createvalue(F, type, IR_PHI);
-  v->args.phi = ir_phivec_createwa(F->L);
+  ir_phivec_create(&v->args.phi, F->L);
   return v;
 }
 
@@ -205,7 +195,7 @@ void _ir_addphinode(IRFunction *F, IRValue *v, IRValue *value,
   IRPhiNode *phi = luaM_new(F->L, IRPhiNode);
   phi->value = value;
   phi->bblock = bblock;
-  ir_phivec_push(v->args.phi, phi);
+  ir_phivec_push(&v->args.phi, phi);
   fll_assert(v->instr == IR_PHI, "ir_addphinode: value ins't a phi");
   fll_assert(v->type == value->type, "ir_addphinode: type mismatch");
 }
@@ -356,10 +346,10 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
       break;
     }
     case IR_PHI: {
-      size_t i, n = ir_phivec_size(v->args.phi);
+      size_t i, n = ir_phivec_size(&v->args.phi);
       fllog("phi [<");
       for (i = 0; i < n; ++i) {
-        IRPhiNode *phi = ir_phivec_get(v->args.phi, i);
+        IRPhiNode *phi = ir_phivec_get(&v->args.phi, i);
         printbblock(phi->bblock, bbindices);
         fllog(", ");
         printvalue(phi->value, valindices);
@@ -376,9 +366,9 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
 static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
                         IRValueTable *valindices) {
   int bbindex = 0, valindex = 0;
-  ir_bbvec_foreach(F->bblocks, bb, {
+  ir_bbvec_foreach(&F->bblocks, bb, {
     ir_bbtab_insert(bbindices, bb, bbindex++);
-    ir_valvec_foreach(bb->values, v, {
+    ir_valvec_foreach(&bb->values, v, {
       if (v->instr != IR_CONST && v->type != IR_VOID)
         ir_valtab_insert(valindices, v, valindex++);
     });
@@ -388,21 +378,23 @@ static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
 void _ir_print(IRFunction *F) {
   size_t nblocks = _ir_nbblocks(F);
   size_t nvalues = _ir_nvalues(F);
-  IRBBlockTable *bbindices = ir_bbtab_createwa(nblocks, F->L);
-  IRValueTable *valindices = ir_valtab_createwa(nvalues, F->L);;
-  fillindices(F, bbindices, valindices);
+  IRBBlockTable bbindices;
+  IRValueTable valindices;
+  ir_bbtab_create(&bbindices, nblocks, F->L);
+  ir_valtab_create(&valindices, nvalues, F->L);
+  fillindices(F, &bbindices, &valindices);
   fllog("IR function (%p)\n", (void *)F);
-  ir_bbvec_foreach(F->bblocks, bb, {
-    printbblock(bb, bbindices);
+  ir_bbvec_foreach(&F->bblocks, bb, {
+    printbblock(bb, &bbindices);
     fllog(":\n");
-    ir_valvec_foreach(bb->values, v, {
-      printinstr(v, bbindices, valindices);
+    ir_valvec_foreach(&bb->values, v, {
+      printinstr(v, &bbindices, &valindices);
     });
     fllog("\n");
   });
   fllog("\n");
-  ir_bbtab_destroy(bbindices);
-  ir_valtab_destroy(valindices);
+  ir_bbtab_destroy(&bbindices);
+  ir_valtab_destroy(&valindices);
 }
 
 

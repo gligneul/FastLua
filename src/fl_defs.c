@@ -40,17 +40,18 @@ void fl_closestate(struct lua_State *L) {
 }
 
 void fl_initproto(struct Proto *p) {
-  p->fl.instr = NULL;
+  p->fl.initialized = 0;
 }
 
 void fl_closeproto(struct lua_State *L, struct Proto *p) {
-  if (!p->fl.instr) return;
+  if (!p->fl.initialized) return;
   flasm_closeproto(L, p);
-  fliv_destroy(p->fl.instr);
+  fliv_destroy(&p->fl.instr);
 }
 
 void fl_loadproto(struct lua_State *L, struct Proto *p) {
-  p->fl.instr = fliv_createwa(L);
+  p->fl.initialized = 1;
+  fliv_create(&p->fl.instr, L);
   fli_foreach(p, i, fli_toprof(p, i));
 }
 

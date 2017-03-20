@@ -25,11 +25,15 @@
 #ifndef fl_containers
 #define fl_containers
 
+#include "lmem.h"
+
 #include "fl_logger.h"
 
+#define TsccAllocator struct lua_State *
+#define tscc_realloc luaM_realloc_
 #define tscc_assert fll_assert
 
-#include "fl_tscc.h"
+#include "containers.h"
 
 #endif
 

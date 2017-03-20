@@ -49,15 +49,11 @@
 #define asmdata(p, i) (fli_getext(p, i)->u.asmdata)
 
 /* Containers */
-TSCC_DECL_HASHTABLE_WA(AsmBBlockTable, asm_bbtab_, IRBBlock *, LLVMBasicBlockRef,
-    lua_State *)
-TSCC_IMPL_HASHTABLE_WA(AsmBBlockTable, asm_bbtab_, IRBBlock *, LLVMBasicBlockRef,
-    tscc_ptr_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
+TSCC_DECL_HASHTABLE(AsmBBlockTable, asm_bbtab_, IRBBlock *, LLVMBasicBlockRef,
+    tscc_ptr_hashfunc, tscc_general_compare)
 
-TSCC_DECL_HASHTABLE_WA(AsmValueTable, asm_valtab_, IRValue *, LLVMValueRef,
-    lua_State *)
-TSCC_IMPL_HASHTABLE_WA(AsmValueTable, asm_valtab_, IRValue *, LLVMValueRef,
-    tscc_ptr_hashfunc, tscc_general_compare, struct lua_State *, luaM_realloc_)
+TSCC_DECL_HASHTABLE(AsmValueTable, asm_valtab_, IRValue *, LLVMValueRef,
+    tscc_ptr_hashfunc, tscc_general_compare)
 
 /* Return code for functions that may fail. */
 enum AsmRetCode {
@@ -78,8 +74,8 @@ typedef struct AsmState {
   LLVMModuleRef module;             /* LLVM module */
   LLVMValueRef func;                /* LLVM function */
   LLVMBuilderRef builder;           /* LLVM builder */
-  AsmBBlockTable *bbtable;          /* map a IR bb to a LLVM bb */
-  AsmValueTable *valtable;          /* map a IR bb to a LLVM bb */
+  AsmBBlockTable bbtable;           /* map a IR bb to a LLVM bb */
+  AsmValueTable valtable;           /* map a IR bb to a LLVM bb */
 } AsmState;
 
 /* IR define trick. */
@@ -146,12 +142,12 @@ static LLVMIntPredicate convertfcmp(enum IRCmpOp op) {
 
 /* Obtain the LLVM value given the IR value. */
 static LLVMValueRef getllvmvalue(AsmState *A, IRValue *v) {
-  return asm_valtab_get(A->valtable, v, NULL);
+  return asm_valtab_get(&A->valtable, v, NULL);
 }
 
 /* Obtain the LLVM bblock given the IR bblock. */
 static LLVMBasicBlockRef getllvmbb(AsmState *A, IRBBlock *bb) {
-  return asm_bbtab_get(A->bbtable, bb, NULL);
+  return asm_bbtab_get(&A->bbtable, bb, NULL);
 }
 
 /* Create the llvm function. */
@@ -169,23 +165,23 @@ static void asmstateinit(AsmState *A, lua_State *L, IRFunction *irfunc) {
   A->module = LLVMModuleCreateWithName("fl.asm");
   A->func = createllvmfunction(A);
   A->builder = LLVMCreateBuilder();
-  A->bbtable = asm_bbtab_createwa(ir_nbblocks(), L);
-  A->valtable = asm_valtab_createwa(ir_nvalues(), L);
+  asm_bbtab_create(&A->bbtable, ir_nbblocks(), L);
+  asm_valtab_create(&A->valtable, ir_nvalues(), L);
 }
 
 /* Destroy the state internal data. */
 static void asmstateclose(AsmState *A) {
   LLVMDisposeModule(A->module);
   LLVMDisposeBuilder(A->builder);
-  asm_bbtab_destroy(A->bbtable);
-  asm_valtab_destroy(A->valtable);
+  asm_bbtab_destroy(&A->bbtable);
+  asm_valtab_destroy(&A->valtable);
 }
 
 /* Create the basic blocks. */
 static void createbblocks(AsmState *A) {
   ir_foreach_bb(bb, {
     LLVMBasicBlockRef llvmbb = LLVMAppendBasicBlock(A->func, "bb");
-    asm_bbtab_insert(A->bbtable, bb, llvmbb);
+    asm_bbtab_insert(&A->bbtable, bb, llvmbb);
   });
 }
 
@@ -284,21 +280,21 @@ static void compilevalue(AsmState *A, IRValue *v) {
       break;
     }
   }
-  asm_valtab_insert(A->valtable, v, llvmval);
+  asm_valtab_insert(&A->valtable, v, llvmval);
 }
 
 /* Link the phi values. */
 static void linkphivalues(AsmState *A) {
   ir_foreach_bb(bb, {
-    ir_valvec_foreach(bb->values, v, {
+    ir_valvec_foreach(&bb->values, v, {
       if (v->instr == IR_PHI) {
         size_t i = 0;
-        size_t n = ir_phivec_size(v->args.phi);
+        size_t n = ir_phivec_size(&v->args.phi);
         LLVMValueRef *incvalues = luaM_newvector(A->L, n, LLVMValueRef);
         LLVMBasicBlockRef *incblocks =
             luaM_newvector(A->L, n, LLVMBasicBlockRef);
         LLVMValueRef llvmphi = getllvmvalue(A, v);
-        ir_phivec_foreach(v->args.phi, phinode, {
+        ir_phivec_foreach(&v->args.phi, phinode, {
           incvalues[i] = getllvmvalue(A, phinode->value);
           incblocks[i] = getllvmbb(A, phinode->bblock);
           i++;
@@ -314,9 +310,9 @@ static void linkphivalues(AsmState *A) {
 /* Compile each basic block. */
 static void compilebblocks(AsmState *A) {
   ir_foreach_bb(bb, {
-    LLVMBasicBlockRef llvmbb = asm_bbtab_get(A->bbtable, bb, NULL);
+    LLVMBasicBlockRef llvmbb = asm_bbtab_get(&A->bbtable, bb, NULL);
     LLVMPositionBuilderAtEnd(A->builder, llvmbb);
-    ir_valvec_foreach(bb->values, v, {
+    ir_valvec_foreach(&bb->values, v, {
       compilevalue(A, v);
     });
   });

@@ -60,8 +60,7 @@ struct FLInstrExt {
 };
 
 /* struct FLInstrExt container. */
-TSCC_DECL_VECTOR_WA(FLInstrExtVector, fliv_, struct FLInstrExt,
-    struct lua_State *)
+TSCC_DECL_VECTOR(FLInstrExtVector, fliv_, struct FLInstrExt)
 
 /* Obtain the instruction index given the address. */
 #define fli_instrindex(p, addr)     ((addr) - (p)->code)

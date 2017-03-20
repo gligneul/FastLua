@@ -123,7 +123,7 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
       fll_error("unhandled opcode");
       break;
   }
-  if (!failed) flt_rtvec_push(tr->instrs, ti);
+  if (!failed) flt_rtvec_push(&tr->instrs, ti);
   return failed;
 }
 

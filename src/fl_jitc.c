@@ -48,9 +48,7 @@ struct JitExit {
 };
 
 /* JitExit container */
-TSCC_DECL_VECTOR_WA(JitExitVector, exvec_, struct JitExit, struct lua_State *)
-TSCC_IMPL_VECTOR_WA(JitExitVector, exvec_, struct JitExit, struct lua_State *,
-    luaM_realloc_)
+TSCC_DECL_VECTOR(JitExitVector, exvec_, struct JitExit)
 #define exvec_foreach(vec, val, cmd) \
     TSCC_VECTOR_FOREACH(exvec_, vec, struct JitExit, val, cmd)
 
@@ -63,7 +61,7 @@ typedef struct JitState {
   IRBBlock *loopstart;          /* first block in the loop */
   IRBBlock *loopend;            /* last block in the loop */
   IRBBlock *earlyexit;          /* side exit before the loop started */
-  JitExitVector *exits;         /* exits that must restore the lua stack */
+  JitExitVector exits;          /* exits that must restore the lua stack */
   IRValue *lstate;              /* Lua state in the jitted code */
   IRValue *base;                /* Lua stack base */
   int nregisters;               /* number of registers in Lua stack */
@@ -82,7 +80,7 @@ static JitState *createjitstate(lua_State *L, TraceRecording *tr) {
   J->loopstart = NULL;
   J->loopend = NULL;
   J->earlyexit = NULL;
-  J->exits = exvec_createwa(J->L);
+  exvec_create(&J->exits, J->L);
   J->lstate = J->base = NULL;
   J->nregisters = tr->p->maxstacksize;
   J->current = luaM_newvector(L, J->nregisters, IRValue *);
@@ -94,7 +92,7 @@ static JitState *createjitstate(lua_State *L, TraceRecording *tr) {
 
 static void destroyjitstate(JitState *J) {
   ir_destroy(J->irfunc);
-  exvec_destroy(J->exits);
+  exvec_destroy(&J->exits);
   luaM_freearray(J->L, J->current, J->nregisters);
   luaM_freearray(J->L, J->phi, J->nregisters);
   luaM_free(J->L, J);
@@ -210,7 +208,7 @@ static IRBBlock *addexit(JitState *J, int status) {
   e.indices = luaM_newvector(J->L, ntostore, int);
   e.values = luaM_newvector(J->L, ntostore, IRValue *);
   e.status = status;
-  exvec_push(J->exits, e);
+  exvec_push(&J->exits, e);
   /* save the values that will be stored for later */
   for (i = 0; i < J->tr->p->maxstacksize; ++i) {
     if (J->tr->regs[i].set && J->current[i]) {
@@ -314,13 +312,13 @@ static void compilepreloop(JitState *J) {
     struct TraceRegister *treg = J->tr->regs + i;
     if (treg->loaded) loadregister(J, treg, i);
   }
-  flt_rtvec_foreach(J->tr->instrs, ti, compilebytecode(J, ti));
+  flt_rtvec_foreach(&J->tr->instrs, ti, compilebytecode(J, ti));
 }
 
 static void compileloop(JitState *J) {
   ir_currbblock() = J->loopstart;
   createphivalues(J);
-  flt_rtvec_foreach(J->tr->instrs, ti, compilebytecode(J, ti));
+  flt_rtvec_foreach(&J->tr->instrs, ti, compilebytecode(J, ti));
 }
 
 /* Add the missing jumps in the basic blocks. */
@@ -343,7 +341,7 @@ void fljit_compile(TraceRecording *tr) {
   compileloop(J);
   addjmps(J);
   linkphivalues(J);
-  exvec_foreach(J->exits, e, closeexit(J, &e));
+  exvec_foreach(&J->exits, e, closeexit(J, &e));
   ir_print();
   fllogln("ended jit compilation");
   flasm_compile(tr->L, tr->p, (Instruction*)tr->start, J->irfunc);

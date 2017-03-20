@@ -43,8 +43,7 @@ struct TraceInstr {
 };
 
 /* TraceInstr container */
-TSCC_DECL_VECTOR_WA(TraceInstrVector, flt_rtvec_, struct TraceInstr,
-    struct lua_State *)
+TSCC_DECL_VECTOR(TraceInstrVector, flt_rtvec_, struct TraceInstr)
 #define flt_rtvec_foreach(vec, val, cmd) \
     TSCC_VECTOR_FOREACH(flt_rtvec_, vec, struct TraceInstr, val, cmd)
 
@@ -63,7 +62,7 @@ typedef struct TraceRecording {
   struct lua_State *L;          /* Lua state */
   struct Proto *p;              /* Lua function */
   const Instruction *start;     /* first instruction of the trace */
-  TraceInstrVector *instrs;     /* runtime info for each instruction */
+  TraceInstrVector instrs;      /* runtime info for each instruction */
   struct TraceRegister *regs;   /* runtime info for each register */
   lu_byte completeloop;         /* tell if the trace is a full loop */
 } TraceRecording;

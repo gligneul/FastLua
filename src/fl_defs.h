@@ -29,12 +29,13 @@
 #ifndef fl_defs_h
 #define fl_defs_h
 
+#include "fl_instr.h"
+
 /* Foward declarations */
 struct lua_State;
 struct Proto;
 struct AsmInstrData;
 struct TraceRecording;
-struct FLInstrExtVector;
 
 /* Numbers of opcode executions required to record a trace. */
 #ifndef FL_JIT_THRESHOLD
@@ -48,7 +49,8 @@ struct FLState {
 
 /* Data that should be stored in lua Proto. */
 struct FLProto {
-  struct FLInstrExtVector *instr;
+  unsigned int initialized : 1;
+  FLInstrExtVector instr;
 };
 
 /* Init/destroy FastLua state. */

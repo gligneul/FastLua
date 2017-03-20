@@ -28,15 +28,12 @@
 
 #include "fl_trace.h"
 
-TSCC_IMPL_VECTOR_WA(TraceInstrVector, flt_rtvec_, struct TraceInstr,
-    struct lua_State *, luaM_realloc_)
-
 TraceRecording *flt_createtrace(struct lua_State *L) {
   TraceRecording *tr = luaM_new(L, TraceRecording);
   tr->L = L;
   tr->p = NULL;
   tr->start = NULL;
-  tr->instrs = flt_rtvec_createwa(L);
+  flt_rtvec_create(&tr->instrs, L);
   tr->regs = NULL;
   tr->completeloop = 0;
   return tr;
@@ -44,7 +41,7 @@ TraceRecording *flt_createtrace(struct lua_State *L) {
 
 void flt_destroytrace(TraceRecording *tr) {
   if (tr->p) luaM_freearray(tr->L, tr->regs, tr->p->maxstacksize);
-  flt_rtvec_destroy(tr->instrs);
+  flt_rtvec_destroy(&tr->instrs);
   luaM_free(tr->L, tr);
 }
 

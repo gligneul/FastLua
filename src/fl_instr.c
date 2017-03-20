@@ -30,10 +30,7 @@
 #include "fl_instr.h"
 #include "fl_logger.h"
 
-#define flivec(p) (p->fl.instr)
-
-TSCC_IMPL_VECTOR_WA(FLInstrExtVector, fliv_, struct FLInstrExt,
-    struct lua_State *, luaM_realloc_)
+#define flivec(p) (&p->fl.instr)
 
 struct FLInstrExt *fli_getext(struct Proto *p, Instruction *i) {
   fll_assert(fli_isfl(i), "invalid opcode");
