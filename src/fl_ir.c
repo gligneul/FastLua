@@ -120,6 +120,12 @@ IRValue *_ir_constf(IRFunction *F, IRFloat f) {
   return v;
 }
 
+IRValue *_ir_constp(IRFunction *F, void *p) {
+  IRValue *v = createvalue(F, IR_PTR, IR_CONST);
+  v->args.konst.p = p;
+  return v;
+}
+
 IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n) {
   IRValue *v = createvalue(F, type, IR_GETARG);
   v->args.getarg.n = n;

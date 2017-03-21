@@ -190,12 +190,16 @@ static void compilevalue(AsmState *A, IRValue *v) {
   LLVMValueRef llvmval = NULL;
   switch (v->instr) {
     case IR_CONST: {
-      if (ir_isintt(v->type)) {
-        LLVMTypeRef llvmtype = converttype(v->type);
+      LLVMTypeRef llvmtype = converttype(v->type);
+      if (ir_isintt(v->type))
         llvmval = LLVMConstInt(llvmtype, v->args.konst.i, 1);
-      }
       else if (v->type == IR_FLOAT)
-        llvmval = LLVMConstReal(llvmflt(), v->args.konst.f);
+        llvmval = LLVMConstReal(llvmtype, v->args.konst.f);
+      else if (v->type == IR_PTR) {
+        LLVMValueRef addr = LLVMConstInt(llvmintof(void *),
+            (ptrdiff_t)v->args.konst.p, 0);
+        llvmval = LLVMBuildIntToPtr(A->builder, addr, llvmtype, "");
+      }
       else
         fll_error("invalid constant type");
       break;

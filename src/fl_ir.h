@@ -197,6 +197,7 @@ size_t _ir_nvalues(IRFunction *F);
 /* Add a value to the current basic block and return it. */
 IRValue *_ir_consti(IRFunction *F, IRInt i, enum IRType type);
 IRValue *_ir_constf(IRFunction *F, IRFloat f);
+IRValue *_ir_constp(IRFunction *F, void *p);
 IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n);
 IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem, int offset);
 IRValue *_ir_store(IRFunction *F, IRValue *mem, IRValue *val, int offset);
@@ -209,6 +210,7 @@ IRValue *_ir_return(IRFunction *F, IRValue *v);
 IRValue *_ir_phi(IRFunction *F, enum IRType type);
 #define ir_consti(i, type) _ir_consti(_irfunc, i, type)
 #define ir_constf(f) _ir_constf(_irfunc, f)
+#define ir_constp(p) _ir_constp(_irfunc, p)
 #define ir_getarg(type, n) _ir_getarg(_irfunc, type, n)
 #define ir_load(type, mem, offset) _ir_load(_irfunc, type, mem, offset)
 #define ir_store(mem, val, offset) _ir_store(_irfunc, mem, val, offset)

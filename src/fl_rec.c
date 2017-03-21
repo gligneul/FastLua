@@ -45,7 +45,8 @@
 	ISK(GETARG_C(i)) ? k+INDEXK(GETARG_C(i)) : base+GETARG_C(i))
 
 /* The register was read by the instruction. */
-static void readregister(TraceRecording *tr, int regpos, int tag, int checktag) {
+static void readregister(TraceRecording *tr, int regpos, int tag,
+                         int checktag) {
   struct TraceRegister *treg = tr->regs + regpos;
   /* check if the register must be loaded from the stack */
   if (!treg->set) {
@@ -93,7 +94,7 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
   ti.instr = i;
   switch (GET_OPCODE(i)) {
     case OP_LOADK: {
-      int tag = ttype(k + GETARG_Bx(i));
+      int tag = rttype(k + GETARG_Bx(i));
       setregister(tr, GETARG_A(i), tag);
       break;
     }
@@ -101,16 +102,16 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
     case OP_SUB:
     case OP_MUL: {
       TValue *rkb = RKB(i), *rkc = RKC(i);
-      int resulttag = computebintoptag(ttype(rkb), ttype(rkc));
-      readrk(tr, GETARG_B(i), ttype(rkb), 1);
-      readrk(tr, GETARG_C(i), ttype(rkc), 1);
+      int resulttag = computebintoptag(rttype(rkb), rttype(rkc));
+      readrk(tr, GETARG_B(i), rttype(rkb), 1);
+      readrk(tr, GETARG_C(i), rttype(rkc), 1);
       setregister(tr, GETARG_A(i), resulttag);
       /* TODO: now only compiles int/float opcodes :'( */
       failed = !(ttisnumber(rkb) && ttisnumber(rkc));
       break;
     }
     case OP_FORLOOP: {
-      int tag = ttype(RA(i));
+      int tag = rttype(RA(i));
       ti.u.forloop.steplt0 = isforloopsteplt0(RA(i));
       readregister(tr, GETARG_A(i), tag, 1);
       readregister(tr, GETARG_A(i) + 1, tag, 0);
