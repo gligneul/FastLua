@@ -93,6 +93,12 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
   int failed = 0;
   ti.instr = i;
   switch (GET_OPCODE(i)) {
+    case OP_MOVE: {
+      int tag = rttype(RB(i));
+      readregister(tr, GETARG_B(i), tag, 1);
+      setregister(tr, GETARG_A(i), tag);
+      break;
+    }
     case OP_LOADK: {
       int tag = rttype(k + GETARG_Bx(i));
       setregister(tr, GETARG_A(i), tag);

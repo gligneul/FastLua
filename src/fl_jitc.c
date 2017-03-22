@@ -241,6 +241,12 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
   Instruction i = ti.instr;
   int op = GET_OPCODE(i);
   switch (op) {
+    case OP_MOVE: {
+      int tag;
+      IRValue *rb = gettvalue(J, GETARG_B(i), &tag);
+      setregister(J, GETARG_A(i), rb, tag);
+      break;
+    }
     case OP_LOADK: {
       int tag;
       IRValue *k = getconst(J, GETARG_Bx(i), &tag);
