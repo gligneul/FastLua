@@ -423,12 +423,14 @@ TSCC_INLINE void pref##insert(HashTable *h, Key key, Value value) {            \
   int found;                                                                   \
   size_t pos;                                                                  \
   pos = pref##getposition_(h, key, &found);                                    \
-  if (!found && pref##growhashtable_(h))                                       \
-    pos = pref##getposition_(h, key, &found);                                  \
+  if (!found) {                                                                \
+    h->size++;                                                                 \
+    if (pref##growhashtable_(h))                                               \
+      pos = pref##getposition_(h, key, &found);                                \
+  }                                                                            \
   h->used[pos] = 1;                                                            \
   h->keys[pos] = key;                                                          \
   h->values[pos] = value;                                                      \
-  h->size++;                                                                   \
 }                                                                              \
                                                                                \
 /* Try to insert the entry (key, value) into the hash. Return 1 if the entry

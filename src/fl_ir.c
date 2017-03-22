@@ -167,13 +167,12 @@ IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r) {
 }
 
 IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
-                 IRBBlock *truebr, IRBBlock *falsebr) {
+                 IRBBlock *jmp) {
   IRValue *v = createvalue(F, IR_VOID, IR_CMP);
   v->args.cmp.op = op;
   v->args.cmp.l = l;
   v->args.cmp.r = r;
-  v->args.cmp.truebr = truebr;
-  v->args.cmp.falsebr = falsebr;
+  v->args.cmp.jmp = jmp;
   fll_assert(l->type == r->type, "ir_cmp: type mismatch");
   return v;
 }
@@ -336,9 +335,7 @@ static void printinstr(IRValue *v, IRBBlockTable *bbindices,
       fllog(" ");
       printvalue(v->args.cmp.r, valindices);
       fllog(" then ");
-      printbblock(v->args.cmp.truebr, bbindices);
-      fllog(" else ");
-      printbblock(v->args.cmp.falsebr, bbindices);
+      printbblock(v->args.cmp.jmp, bbindices);
       break;
     }
     case IR_JMP: {

@@ -74,8 +74,9 @@ typedef struct AsmState {
   LLVMModuleRef module;             /* LLVM module */
   LLVMValueRef func;                /* LLVM function */
   LLVMBuilderRef builder;           /* LLVM builder */
-  AsmBBlockTable bbtable;           /* map a IR bb to a LLVM bb */
-  AsmValueTable valtable;           /* map a IR bb to a LLVM bb */
+  AsmBBlockTable bbentry;           /* map a IR bb to a LLVM bb entry */
+  AsmBBlockTable bbexit;            /* map a IR bb to a LLVM bb exit */
+  AsmValueTable valtable;           /* map a IR value to a LLVM value */
 } AsmState;
 
 /* IR define trick. */
@@ -145,11 +146,6 @@ static LLVMValueRef getllvmvalue(AsmState *A, IRValue *v) {
   return asm_valtab_get(&A->valtable, v, NULL);
 }
 
-/* Obtain the LLVM bblock given the IR bblock. */
-static LLVMBasicBlockRef getllvmbb(AsmState *A, IRBBlock *bb) {
-  return asm_bbtab_get(&A->bbtable, bb, NULL);
-}
-
 /* Create the llvm function. */
 static LLVMValueRef createllvmfunction(AsmState *A) {
   LLVMTypeRef ret = llvmint();
@@ -165,7 +161,8 @@ static void asmstateinit(AsmState *A, lua_State *L, IRFunction *irfunc) {
   A->module = LLVMModuleCreateWithName("fl.asm");
   A->func = createllvmfunction(A);
   A->builder = LLVMCreateBuilder();
-  asm_bbtab_create(&A->bbtable, ir_nbblocks(), L);
+  asm_bbtab_create(&A->bbentry, ir_nbblocks(), L);
+  asm_bbtab_create(&A->bbexit, ir_nbblocks(), L);
   asm_valtab_create(&A->valtable, ir_nvalues(), L);
 }
 
@@ -173,7 +170,8 @@ static void asmstateinit(AsmState *A, lua_State *L, IRFunction *irfunc) {
 static void asmstateclose(AsmState *A) {
   LLVMDisposeModule(A->module);
   LLVMDisposeBuilder(A->builder);
-  asm_bbtab_destroy(&A->bbtable);
+  asm_bbtab_destroy(&A->bbentry);
+  asm_bbtab_destroy(&A->bbexit);
   asm_valtab_destroy(&A->valtable);
 }
 
@@ -181,12 +179,13 @@ static void asmstateclose(AsmState *A) {
 static void createbblocks(AsmState *A) {
   ir_foreach_bb(bb, {
     LLVMBasicBlockRef llvmbb = LLVMAppendBasicBlock(A->func, "bb");
-    asm_bbtab_insert(&A->bbtable, bb, llvmbb);
+    asm_bbtab_insert(&A->bbentry, bb, llvmbb);
+    asm_bbtab_insert(&A->bbexit, bb, llvmbb);
   });
 }
 
 /* Compile an ir value into a LLVM value. */
-static void compilevalue(AsmState *A, IRValue *v) {
+static void compilevalue(AsmState *A, IRValue *v, IRBBlock *bb) {
   LLVMValueRef llvmval = NULL;
   switch (v->instr) {
     case IR_CONST: {
@@ -263,13 +262,17 @@ static void compilevalue(AsmState *A, IRValue *v) {
       LLVMValueRef result = (v->args.cmp.l->type == IR_FLOAT) ?
           LLVMBuildFCmp(A->builder, convertfcmp(v->args.cmp.op), l, r, "") :
           LLVMBuildICmp(A->builder, converticmp(v->args.cmp.op), l, r, "");
-      LLVMBasicBlockRef truebr = getllvmbb(A, v->args.cmp.truebr);
-      LLVMBasicBlockRef falsebr = getllvmbb(A, v->args.cmp.falsebr);
+      LLVMBasicBlockRef currbb = asm_bbtab_get(&A->bbexit, bb, NULL);
+      LLVMBasicBlockRef truebr =
+          asm_bbtab_get(&A->bbentry, v->args.cmp.jmp, NULL);
+      LLVMBasicBlockRef falsebr = LLVMAppendBasicBlock(A->func, "bb");
+      LLVMMoveBasicBlockAfter(falsebr, currbb);
+      asm_bbtab_insert(&A->bbexit, bb, falsebr);
       llvmval = LLVMBuildCondBr(A->builder, result, truebr, falsebr);
       break;
     }
     case IR_JMP: {
-      LLVMBasicBlockRef dest = getllvmbb(A, v->args.jmp);
+      LLVMBasicBlockRef dest = asm_bbtab_get(&A->bbentry, v->args.jmp, NULL);
       llvmval = LLVMBuildBr(A->builder, dest);
       break;
     }
@@ -300,7 +303,7 @@ static void linkphivalues(AsmState *A) {
         LLVMValueRef llvmphi = getllvmvalue(A, v);
         ir_phivec_foreach(&v->args.phi, phinode, {
           incvalues[i] = getllvmvalue(A, phinode->value);
-          incblocks[i] = getllvmbb(A, phinode->bblock);
+          incblocks[i] = asm_bbtab_get(&A->bbexit, phinode->bblock, NULL);
           i++;
         });
         LLVMAddIncoming(llvmphi, incvalues, incblocks, n);
@@ -314,10 +317,10 @@ static void linkphivalues(AsmState *A) {
 /* Compile each basic block. */
 static void compilebblocks(AsmState *A) {
   ir_foreach_bb(bb, {
-    LLVMBasicBlockRef llvmbb = asm_bbtab_get(&A->bbtable, bb, NULL);
-    LLVMPositionBuilderAtEnd(A->builder, llvmbb);
     ir_valvec_foreach(&bb->values, v, {
-      compilevalue(A, v);
+      LLVMBasicBlockRef llvmbb = asm_bbtab_get(&A->bbexit, bb, NULL);
+      LLVMPositionBuilderAtEnd(A->builder, llvmbb);
+      compilevalue(A, v, bb);
     });
   });
 }
@@ -326,6 +329,7 @@ static void compilebblocks(AsmState *A) {
 static int verifymodule(AsmState *A) {
   char *error = NULL;
   if (LLVMVerifyModule(A->module, LLVMReturnStatusAction, &error)) {
+    fllog("LLVM Error: %s\n", error);
     LLVMDisposeMessage(error);
     LLVMDumpModule(A->module);
     return ASM_ERROR;
@@ -389,7 +393,7 @@ void flasm_compile(struct lua_State *L, struct Proto *p, Instruction *i,
   fllogln("flasm_compile: starting compilation");
   if (compile(L, F, asmdata(p, i)) == ASM_ERROR) {
     flasm_destroy(L, p, i);
-    fllogln("flasm_compile: compilation falied");
+    fllogln("flasm_compile: compilation failed");
   }
   else {
     fllogln("flasm_compile: compilation succeed");

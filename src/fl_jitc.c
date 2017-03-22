@@ -131,10 +131,7 @@ static void loadregister(JitState *J, struct TraceRegister *treg, int regpos) {
   int addr = sizeof(TValue) * regpos;
   if (treg->checktag) {
     IRValue *tag = ir_load(IR_INT, J->base, addr + offsetof(TValue, tt_));
-    IRBBlock *continuation = ir_insertbblock(J->preloop);
-    ir_cmp(IR_NE, tag, ir_consti(expectedtag, IR_INT), J->earlyexit,
-           continuation);
-    ir_currbblock() = J->preloop = continuation;
+    ir_cmp(IR_NE, tag, ir_consti(expectedtag, IR_INT), J->earlyexit);
   }
   J->current[regpos] = ir_load(type, J->base, addr + offsetof(TValue, value_));
   J->tag[regpos] = expectedtag;
@@ -275,28 +272,15 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
       IRValue *limit = gettvalue(J, a + 1, NULL);
       IRValue *step = gettvalue(J, a + 2, NULL);
       IRValue *newidx;
-      IRBBlock *keeplooping = ir_insertbblock(ir_currbblock());
       IRBBlock *loopexit = addexit(J, 0);
-
       if (ir_currbblock() == J->preloop) {
-        IRBBlock *continuation = ir_insertbblock(J->preloop);
-        ir_cmp(ti.u.forloop.steplt0 ? IR_GE : IR_LT, step,
-               ir_consti(0, IR_LUAINT), J->earlyexit, continuation);
-        ir_currbblock() = J->preloop = continuation;
+        enum IRCmpOp cmp = ti.u.forloop.steplt0 ? IR_GE : IR_LT;
+        ir_cmp(cmp, step, ir_consti(0, IR_LUAINT), J->earlyexit);
       }
-
       newidx = ir_binop(IR_ADD, idx, step);
-      ir_cmp(ti.u.forloop.steplt0 ? IR_LE : IR_GE, limit, newidx,
-             keeplooping, loopexit);
-
-      if (ir_currbblock() == J->preloop) 
-        J->preloop = keeplooping;
-      else
-        J->loopend = keeplooping;
-      ir_currbblock() = keeplooping;
+      ir_cmp(ti.u.forloop.steplt0 ? IR_LT : IR_GT, newidx, limit, loopexit);
       setregister(J, a, newidx, tag); /* internal index */
       setregister(J, a + 3, newidx, tag); /* external index */
-
       break;
     }
     default:

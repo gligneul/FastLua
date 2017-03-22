@@ -150,8 +150,7 @@ struct IRValue {
     struct { IRValue *mem, *v; size_t offset; } store;
     struct { IRValue *v; enum IRType type; } cast;
     struct { enum IRBinOp op; IRValue *l, *r; } binop;
-    struct { enum IRCmpOp op; IRValue *l, *r;
-             IRBBlock *truebr, *falsebr; } cmp;
+    struct { enum IRCmpOp op; IRValue *l, *r; IRBBlock *jmp; } cmp;
     IRBBlock *jmp;
     struct { IRValue *v; } ret;
     IRPhiNodeVector phi;
@@ -204,7 +203,7 @@ IRValue *_ir_store(IRFunction *F, IRValue *mem, IRValue *val, int offset);
 IRValue *_ir_cast(IRFunction *F, IRValue *v, enum IRType type);
 IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r);
 IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
-                 IRBBlock *truebr, IRBBlock *falsebr);
+                 IRBBlock *jmp);
 IRValue *_ir_jmp(IRFunction *F, IRBBlock *bb);
 IRValue *_ir_return(IRFunction *F, IRValue *v);
 IRValue *_ir_phi(IRFunction *F, enum IRType type);
@@ -216,8 +215,7 @@ IRValue *_ir_phi(IRFunction *F, enum IRType type);
 #define ir_store(mem, val, offset) _ir_store(_irfunc, mem, val, offset)
 #define ir_cast(v, type) _ir_cast(_irfunc, v, type)
 #define ir_binop(op, l, r) _ir_binop(_irfunc, op, l, r)
-#define ir_cmp(op, l, r, truebr, falsebr) \
-    _ir_cmp(_irfunc, op, l, r, truebr, falsebr)
+#define ir_cmp(op, l, r, jmp) _ir_cmp(_irfunc, op, l, r, jmp)
 #define ir_jmp(bb) _ir_jmp(_irfunc, bb)
 #define ir_return(v) _ir_return(_irfunc, v)
 #define ir_phi(type) _ir_phi(_irfunc, type)
