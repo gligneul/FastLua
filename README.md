@@ -32,4 +32,4 @@ FastLua use Lua tests and a custom test suite. Use `runtests.sh` to run the test
 
 ## Benchmarks
 
-There is also a benchmark suite. Type `runbenchmarks.sh` to run int.
+There is also a benchmark suite. Type `runbenchmarks.sh` to run it.
