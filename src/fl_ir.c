@@ -166,15 +166,46 @@ IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r) {
   return v;
 }
 
+/* Perform a const comparison operation. */
+#define performcmp(op, l, r) \
+  do { \
+    switch (op) { \
+      case IR_NE: return (l) != (r); \
+      case IR_EQ: return (l) == (r); \
+      case IR_LE: return (l) <= (r); \
+      case IR_LT: return (l) < (r); \
+      case IR_GE: return (l) >= (r); \
+      case IR_GT: return (l) > (r); \
+    } \
+  } while (0)
+
+static int foldcmp(enum IRCmpOp op, IRValue *l, IRValue *r) {
+  if (ir_isintt(l->type))
+    performcmp(op, l->args.konst.i, r->args.konst.i);
+  else if (l->type == IR_FLOAT)
+    performcmp(op, l->args.konst.f, r->args.konst.f);
+  else
+    performcmp(op, l->args.konst.p, r->args.konst.p);
+  return 0;
+}
+
 IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
                  IRBBlock *jmp) {
-  IRValue *v = createvalue(F, IR_VOID, IR_CMP);
-  v->args.cmp.op = op;
-  v->args.cmp.l = l;
-  v->args.cmp.r = r;
-  v->args.cmp.jmp = jmp;
   fll_assert(l->type == r->type, "ir_cmp: type mismatch");
-  return v;
+  if (l->instr == IR_CONST && r->instr == IR_CONST) {
+    if (foldcmp(op, l, r))
+      return _ir_jmp(F, jmp);
+    else
+      return NULL;
+  }
+  else {
+    IRValue *v = createvalue(F, IR_VOID, IR_CMP);
+    v->args.cmp.op = op;
+    v->args.cmp.l = l;
+    v->args.cmp.r = r;
+    v->args.cmp.jmp = jmp;
+    return v;
+  }
 }
 
 IRValue *_ir_jmp(IRFunction *F, IRBBlock *bb) {
@@ -265,7 +296,7 @@ static void printvalue(IRValue *v, IRValueTable *indices) {
 }
 
 static void printbblock(IRBBlock *bb, IRBBlockTable *indices) {
-  fllog("bb_%d", ir_bbtab_get(indices, bb, -1));
+  fllog("bb%d", ir_bbtab_get(indices, bb, -1));
 }
 
 static void printinstr(IRValue *v, IRBBlockTable *bbindices,

@@ -36,7 +36,7 @@ struct lua_State;
 
 /* Runtime information for each instruction */
 struct TraceInstr {
-  Instruction instr;            /* instruction */
+  const Instruction *instr;     /* instruction */
   union {                       /* specific fields for each opcode */
     struct { lu_byte steplt0; } forloop;
   } u;
@@ -52,7 +52,6 @@ struct TraceRegister {
   lu_byte tag;                  /* register's tag */
   lu_byte loadedtag;            /* tag when loaded from the stack */
   lu_byte tagset : 1;           /* the tag was set */
-  lu_byte checktag : 1;         /* the tag should be checked */
   lu_byte loaded : 1;           /* should be loaded from the stack */
   lu_byte set : 1;              /* the register changed */
 };

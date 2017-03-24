@@ -1,6 +1,9 @@
 # Object files
 *.o
 
+# Dependencies
+*.d
+
 # Libraries
 *.a
 

@@ -45,20 +45,18 @@
 	ISK(GETARG_C(i)) ? k+INDEXK(GETARG_C(i)) : base+GETARG_C(i))
 
 /* The register was read by the instruction. */
-static void readregister(TraceRecording *tr, int regpos, int tag,
-                         int checktag) {
+static void readregister(TraceRecording *tr, int regpos, int tag) {
   struct TraceRegister *treg = tr->regs + regpos;
   /* check if the register must be loaded from the stack */
   if (!treg->set) {
     treg->loadedtag = treg->tag = tag;
-    treg->checktag = checktag;
     treg->loaded = 1;
   }
 }
 
 /* Call readregister if the argument is a register. */
-static void readrk(TraceRecording *tr, int arg, int tag, int checktag) {
-  if (!ISK(arg)) readregister(tr, arg, tag, checktag);
+static void readrk(TraceRecording *tr, int arg, int tag) {
+  if (!ISK(arg)) readregister(tr, arg, tag);
 }
 
 /* The value was set by the instruction. */
@@ -86,16 +84,18 @@ static int isforloopsteplt0(TValue *ra) {
 
 /* Produce the runtime information about the instruction.
  * Return 1 if the instruction can be compiled, else return 0. */
-static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
+static int recordinstruction(TraceRecording *tr, CallInfo *ci,
+                             const Instruction *iptr) {
   struct TraceInstr ti;
+  Instruction i = *iptr;
   TValue *base = ci->u.l.base;
   TValue *k = getproto(ci->func)->k;
   int failed = 0;
-  ti.instr = i;
+  ti.instr = iptr;
   switch (GET_OPCODE(i)) {
     case OP_MOVE: {
       int tag = rttype(RB(i));
-      readregister(tr, GETARG_B(i), tag, 1);
+      readregister(tr, GETARG_B(i), tag);
       setregister(tr, GETARG_A(i), tag);
       break;
     }
@@ -109,8 +109,8 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
     case OP_MUL: {
       TValue *rkb = RKB(i), *rkc = RKC(i);
       int resulttag = computebintoptag(rttype(rkb), rttype(rkc));
-      readrk(tr, GETARG_B(i), rttype(rkb), 1);
-      readrk(tr, GETARG_C(i), rttype(rkc), 1);
+      readrk(tr, GETARG_B(i), rttype(rkb));
+      readrk(tr, GETARG_C(i), rttype(rkc));
       setregister(tr, GETARG_A(i), resulttag);
       /* TODO: now only compiles int/float opcodes :'( */
       failed = !(ttisnumber(rkb) && ttisnumber(rkc));
@@ -119,9 +119,9 @@ static int recordinstruction(TraceRecording *tr, CallInfo *ci, Instruction i) {
     case OP_FORLOOP: {
       int tag = rttype(RA(i));
       ti.u.forloop.steplt0 = isforloopsteplt0(RA(i));
-      readregister(tr, GETARG_A(i), tag, 1);
-      readregister(tr, GETARG_A(i) + 1, tag, 0);
-      readregister(tr, GETARG_A(i) + 2, tag, 0);
+      readregister(tr, GETARG_A(i), tag);
+      readregister(tr, GETARG_A(i) + 1, tag);
+      readregister(tr, GETARG_A(i) + 2, tag);
       setregister(tr, GETARG_A(i), tag);
       setregister(tr, GETARG_A(i) + 3, tag);
       break;
@@ -175,7 +175,7 @@ void flrec_record_(struct lua_State *L, struct CallInfo* ci) {
       memset(tr->regs, 0, tr->p->maxstacksize * sizeof(struct TraceRegister));
       tr->start = i;
     }
-    if (recordinstruction(tr, ci, *i)) {
+    if (recordinstruction(tr, ci, i)) {
       fllogln("recording failed");
       stoprecording(L, 1);
     }
