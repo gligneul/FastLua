@@ -22,7 +22,6 @@
  * IN THE SOFTWARE.
  */
 
-#include <stdarg.h>
 #include <stdio.h>
 
 #include "lprefix.h"
@@ -31,143 +30,122 @@
 #include "fl_logger.h"
 #include "fl_ir.h"
 
-/* Conteiners implementation */
-TSCC_DECL_HASHTABLE(IRBBlockTable, ir_bbtab_, IRBBlock *, int,
-    tscc_ptr_hashfunc, tscc_general_compare)
-TSCC_DECL_HASHTABLE(IRValueTable, ir_valtab_, IRValue *, int,
-    tscc_ptr_hashfunc, tscc_general_compare)
-
-IRFunction *ir_create(struct lua_State *L) {
-  IRFunction *F = luaM_new(L, IRFunction);
+void _ir_init(IRFunction *F, struct lua_State *L) {
   F->L = L;
-  F->currbb = NULL;
-  ir_bbvec_create(&F->bblocks, L);
-  return F;
+  F->currbb = -1;
+  F->ninstrs = 0;
+  irbbv_create(&F->bblocks, L);
 }
 
-void ir_destroy(IRFunction *F) {
-  lua_State *L = F->L;
-  ir_bbvec_foreach(&F->bblocks, bb, {
-    ir_valvec_foreach(&bb->values, v, {
-      if (v->instr == IR_PHI) {
-        ir_phivec_foreach(&v->args.phi, phi, luaM_free(L, phi));
-        ir_phivec_destroy(&v->args.phi);
-      }
-      luaM_free(L, v);
+void _ir_close(IRFunction *F) {
+  irbbv_foreach(&F->bblocks, bb, {
+    irbb_foreach(bb, instr, {
+      if (instr->tag == IR_PHI)
+        irpv_destroy(&instr->args.phi.inc);
     });
-    ir_valvec_destroy(&bb->values);
-    luaM_free(L, bb);
+    irbb_destroy(bb);
   });
-  ir_bbvec_destroy(&F->bblocks);
-  luaM_free(L, F);
+  irbbv_destroy(&F->bblocks);
 }
 
-/* Creates a basic block */
-static IRBBlock *createbblock(IRFunction *F) {
-  IRBBlock *bb = luaM_new(F->L, IRBBlock);
-  ir_valvec_create(&bb->values, F->L);
-  return bb;
+IRName _ir_addbblock(IRFunction *F) {
+  IRBBlock bb;
+  irbb_create(&bb, F->L);
+  irbbv_push(&F->bblocks, bb);
+  return (IRName)irbbv_size(&F->bblocks) - 1;
 }
 
-IRBBlock *_ir_addbblock(IRFunction *F) {
-  IRBBlock *bb = createbblock(F);
-  ir_bbvec_push(&F->bblocks, bb);
-  return bb;
+IRInstr *_ir_instr(IRFunction *F, IRValue v) {
+  IRBBlock *bb = irbbv_getref(&F->bblocks, v.bblock);
+  return irbb_getref(bb, v.instr);
 }
 
-IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb) {
-  IRBBlock *bb = createbblock(F);
-  size_t pos = 1;
-  ir_bbvec_foreach(&F->bblocks, thisbb, {
-    if (thisbb == prevbb)
-      break;
-    else
-      pos++;
-  });
-  ir_bbvec_insert(&F->bblocks, pos, bb);
-  return bb;
-}
-
-size_t _ir_nvalues(IRFunction *F) {
-  size_t n = 0;
-  ir_bbvec_foreach(&F->bblocks, bb, {
-    n += ir_valvec_size(&bb->values);
-  });
-  return n;
-}
-
-/* Create a value in the current basic block. */
-static IRValue *createvalue(IRFunction *F, enum IRType type,
-                            enum IRInstruction instr) {
-  IRBBlock *bb = F->currbb;
-  IRValue *v = luaM_new(F->L, IRValue);
-  v->type = type;
-  v->instr = instr;
-  v->bblock = bb;
-  ir_valvec_push(&bb->values, v);
+IRValue ir_createvalue(IRName bblock, IRName instr) {
+  IRValue v;
+  v.bblock = bblock;
+  v.instr = instr;
   return v;
 }
 
-IRValue *_ir_consti(IRFunction *F, IRInt i, enum IRType type) {
-  IRValue *v = createvalue(F, type, IR_CONST);
-  v->args.konst.i = i;
-  return v;
+/* Create a value pointing to the last instruction added. */
+static IRValue lastvalue(IRFunction *F) {
+  IRBBlock *bb = irbbv_getref(&F->bblocks, F->currbb);
+  return ir_createvalue((IRName)F->currbb, (IRName)irbb_size(bb) - 1);
 }
 
-IRValue *_ir_constf(IRFunction *F, IRFloat f) {
-  IRValue *v = createvalue(F, IR_FLOAT, IR_CONST);
-  v->args.konst.f = f;
-  return v;
+/* Create a instruction in the current basic block. */
+static IRInstr *createinstr(IRFunction *F, enum IRType type,
+                            enum IRInstrTag tag) {
+  IRBBlock *bb = irbbv_getref(&F->bblocks, F->currbb);
+  IRInstr i;
+  i.type = type;
+  i.tag = tag;
+  i.bblock = F->currbb;
+  i.id = F->ninstrs++;
+  irbb_push(bb, i);
+  return irbb_getref(bb, irbb_size(bb) - 1);
 }
 
-IRValue *_ir_constp(IRFunction *F, void *p) {
-  IRValue *v = createvalue(F, IR_PTR, IR_CONST);
-  v->args.konst.p = p;
-  return v;
+IRValue _ir_consti(IRFunction *F, IRInt k, enum IRType type) {
+  IRInstr *i = createinstr(F, type, IR_CONST);
+  i->args.konst.i = k;
+  return lastvalue(F);
 }
 
-IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n) {
-  IRValue *v = createvalue(F, type, IR_GETARG);
-  v->args.getarg.n = n;
-  return v;
+IRValue _ir_constf(IRFunction *F, IRFloat f) {
+  IRInstr *i = createinstr(F, IR_FLOAT, IR_CONST);
+  i->args.konst.f = f;
+  return lastvalue(F);
 }
 
-IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem,
-                  int offset) {
-  IRValue *v = createvalue(F, type, IR_LOAD);
-  v->args.load.mem = mem;
-  v->args.load.offset = offset;
-  v->args.load.type = type;
-  return v;
+IRValue _ir_constp(IRFunction *F, void *p) {
+  IRInstr *i = createinstr(F, IR_PTR, IR_CONST);
+  i->args.konst.p = p;
+  return lastvalue(F);
 }
 
-IRValue *_ir_store(IRFunction *F, IRValue *mem, IRValue *val, int offset) {
-  IRValue *v = createvalue(F, IR_VOID, IR_STORE);
-  v->args.store.mem = mem;
-  v->args.store.v = val;
-  v->args.store.offset = offset;
-  fll_assert(mem->type == IR_PTR, "ir_store: mem ins't a pointer");
-  return v;
+IRValue _ir_getarg(IRFunction *F, enum IRType type, int n) {
+  IRInstr *i = createinstr(F, type, IR_GETARG);
+  i->args.getarg.n = n;
+  return lastvalue(F);
 }
 
-IRValue *_ir_cast(IRFunction *F, IRValue *val, enum IRType type) {
-  IRValue *v = createvalue(F, type, IR_CAST);
-  v->args.cast.v = val;
-  v->args.cast.type = type;
-  return v;
+IRValue _ir_load(IRFunction *F, enum IRType type, IRValue addr, int offset) {
+  IRInstr *i = createinstr(F, type, IR_LOAD);
+  i->args.load.addr = addr;
+  i->args.load.offset = offset;
+  i->args.load.type = type;
+  return lastvalue(F);
 }
 
-IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r) {
-  IRValue *v = createvalue(F, l->type, IR_BINOP);
-  v->args.binop.op = op;
-  v->args.binop.l = l;
-  v->args.binop.r = r;
-  fll_assert(l->type == r->type, "ir_binop: type mismatch");
-  return v;
+IRValue _ir_store(IRFunction *F, IRValue addr, IRValue val, int offset) {
+  IRInstr *i = createinstr(F, IR_VOID, IR_STORE);
+  i->args.store.addr = addr;
+  i->args.store.val = val;
+  i->args.store.offset = offset;
+  fll_assert(_ir_instr(F, addr)->type == IR_PTR, "addr not a pointer");
+  return lastvalue(F);
+}
+
+IRValue _ir_cast(IRFunction *F, IRValue val, enum IRType type) {
+  IRInstr *i = createinstr(F, type, IR_CAST);
+  i->args.cast.val = val;
+  i->args.cast.type = type;
+  return lastvalue(F);
+}
+
+IRValue _ir_binop(IRFunction *F, enum IRBinOp op, IRValue lhs, IRValue rhs) {
+  IRInstr *i = createinstr(F, _ir_instr(F, lhs)->type, IR_BINOP);
+  i->args.binop.op = op;
+  i->args.binop.lhs = lhs;
+  i->args.binop.rhs = rhs;
+  fll_assert(_ir_instr(F, lhs)->type == _ir_instr(F, rhs)->type,
+             "binop type mismatch");
+  return lastvalue(F);
 }
 
 /* Perform a const comparison operation. */
-#define performcmp(op, l, r) \
+#define computecmp_(op, l, r) \
   do { \
     switch (op) { \
       case IR_NE: return (l) != (r); \
@@ -179,61 +157,64 @@ IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r) {
     } \
   } while (0)
 
-static int foldcmp(enum IRCmpOp op, IRValue *l, IRValue *r) {
+static int computecmp(enum IRCmpOp op, IRInstr *l, IRInstr *r) {
   if (ir_isintt(l->type))
-    performcmp(op, l->args.konst.i, r->args.konst.i);
+    computecmp_(op, l->args.konst.i, r->args.konst.i);
   else if (l->type == IR_FLOAT)
-    performcmp(op, l->args.konst.f, r->args.konst.f);
+    computecmp_(op, l->args.konst.f, r->args.konst.f);
   else
-    performcmp(op, l->args.konst.p, r->args.konst.p);
+    computecmp_(op, l->args.konst.p, r->args.konst.p);
   return 0;
 }
 
-IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
-                 IRBBlock *jmp) {
-  fll_assert(l->type == r->type, "ir_cmp: type mismatch");
-  if (l->instr == IR_CONST && r->instr == IR_CONST) {
-    if (foldcmp(op, l, r))
-      return _ir_jmp(F, jmp);
+IRValue _ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue lhs, IRValue rhs,
+                IRName dest) {
+  IRInstr *li = _ir_instr(F, lhs);
+  IRInstr *ri = _ir_instr(F, rhs);
+  fll_assert(li->type == ri->type, "cmp type mismatch");
+  if (li->tag == IR_CONST && ri->tag == IR_CONST) {
+    if (computecmp(op, li, ri))
+      return _ir_jmp(F, dest);
     else
-      return NULL;
+      return ir_nullvalue();
   }
   else {
-    IRValue *v = createvalue(F, IR_VOID, IR_CMP);
-    v->args.cmp.op = op;
-    v->args.cmp.l = l;
-    v->args.cmp.r = r;
-    v->args.cmp.jmp = jmp;
-    return v;
+    IRInstr *i = createinstr(F, IR_VOID, IR_CMP);
+    i->args.cmp.op = op;
+    i->args.cmp.lhs = lhs;
+    i->args.cmp.rhs = rhs;
+    i->args.cmp.dest = dest;
+    return lastvalue(F);
   }
 }
 
-IRValue *_ir_jmp(IRFunction *F, IRBBlock *bb) {
-  IRValue *v = createvalue(F, IR_VOID, IR_JMP);
-  v->args.jmp = bb;
-  return v;
+IRValue _ir_jmp(IRFunction *F, IRName dest) {
+  IRInstr *i = createinstr(F, IR_VOID, IR_JMP);
+  i->args.jmp.dest = dest;
+  return lastvalue(F);
 }
 
-IRValue *_ir_return(IRFunction *F, IRValue *val) {
-  IRValue *v = createvalue(F, IR_VOID, IR_RET);
-  v->args.ret.v = val;
-  return v;
+IRValue _ir_return(IRFunction *F, IRValue val) {
+  IRInstr *i = createinstr(F, IR_VOID, IR_RET);
+  i->args.ret.val = val;
+  return lastvalue(F);
 }
 
-IRValue *_ir_phi(IRFunction *F, enum IRType type) {
-  IRValue *v = createvalue(F, type, IR_PHI);
-  ir_phivec_create(&v->args.phi, F->L);
-  return v;
+IRValue _ir_phi(IRFunction *F, enum IRType type) {
+  IRInstr *i = createinstr(F, type, IR_PHI);
+  irpv_create(&i->args.phi.inc, F->L);
+  return lastvalue(F);
 }
 
-void _ir_addphinode(IRFunction *F, IRValue *v, IRValue *value,
-                    IRBBlock *bblock) {
-  IRPhiNode *phi = luaM_new(F->L, IRPhiNode);
-  phi->value = value;
-  phi->bblock = bblock;
-  ir_phivec_push(&v->args.phi, phi);
-  fll_assert(v->instr == IR_PHI, "ir_addphinode: value ins't a phi");
-  fll_assert(v->type == value->type, "ir_addphinode: type mismatch");
+void _ir_addphiinc(IRFunction *F, IRValue phi, IRValue value, IRName bblock) {
+  IRInstr *pi = _ir_instr(F, phi);
+  IRInstr *vi = _ir_instr(F, value);
+  IRPhiInc inc;
+  inc.value = value;
+  inc.bblock = bblock;
+  irpv_push(&pi->args.phi.inc, inc);
+  fll_assert(pi->tag == IR_PHI, "not a phi instruction");
+  fll_assert(pi->type == vi->type, "phi type mismatch");
 }
 
 /*
@@ -253,17 +234,17 @@ static void printtype(enum IRType type) {
   }
 }
 
-static void printconst(enum IRType type, union IRConstant k) {
+static void printconst(IRInstr *i) {
   fllog("(const ");
-  printtype(type);
+  printtype(i->type);
   fllog(" ");
-  switch (type) {
+  switch (i->type) {
     case IR_CHAR: case IR_SHORT: case IR_INT: case IR_LUAINT: case IR_LONG:
-      fllog("%td", k.i);
+      fllog("%td", i->args.konst.i);
       break;
-    case IR_PTR:    fllog("%p", k.p); break;
-    case IR_FLOAT:  fllog("%f", k.f); break;
-    default: fll_error("ir::printconst: invalid type"); break;
+    case IR_PTR:    fllog("%p", i->args.konst.p); break;
+    case IR_FLOAT:  fllog("%f", i->args.konst.f); break;
+    default: fll_error("invalid constant type"); break;
   }
   fllog(")");
 }
@@ -288,147 +269,128 @@ static void printcmpop(enum IRCmpOp op) {
   }
 }
 
-static void printvalue(IRValue *v, IRValueTable *indices) {
-  if (v->instr == IR_CONST)
-    printconst(v->type, v->args.konst);
+static void printinstrvalue(IRInstr *i) {
+  if (i->tag == IR_CONST)
+    printconst(i);
   else
-    fllog("%%%d", ir_valtab_get(indices, v, -1));
+    fllog("%%%02d", i->id);
 }
 
-static void printbblock(IRBBlock *bb, IRBBlockTable *indices) {
-  fllog("bb%d", ir_bbtab_get(indices, bb, -1));
+static void printvalue(IRFunction *F, IRValue v) {
+  printinstrvalue(_ir_instr(F, v));
 }
 
-static void printinstr(IRValue *v, IRBBlockTable *bbindices,
-                     IRValueTable *valindices) {
-  if (v->instr == IR_CONST)
-    return;
+static void printbblock(IRName bblock) {
+  fllog("bb%d", bblock);
+}
+
+static void printinstr(IRFunction *F, IRInstr *i) {
+  if (i->tag == IR_CONST) return;
   fllog("  ");
-  if (v->type != IR_VOID) {
-    printvalue(v, valindices);
-    /* fllog(" : "); printtype(v->type); */
-    fllog(" = ");
-  }
-  switch (v->instr) {
+  printinstrvalue(i);
+  fllog(" = ");
+  switch (i->tag) {
     case IR_CONST:
       /* do nothing */
       break;
     case IR_GETARG: {
-      fllog("getarg %d", v->args.getarg.n);
+      fllog("getarg %d", i->args.getarg.n);
       break;
     }
     case IR_LOAD: {
-      int offset = v->args.load.offset;
+      int offset = i->args.load.offset;
       fllog("load ");
-      printtype(v->args.load.type);
+      printtype(i->args.load.type);
       fllog(" ");
       if (offset > 0)
         fllog("%d(", offset);
-      printvalue(v->args.load.mem, valindices);
+      printvalue(F, i->args.load.addr);
       if (offset > 0)
         fllog(")");
       break;
     }
     case IR_STORE: {
-      int offset = v->args.store.offset;
+      int offset = i->args.store.offset;
       fllog("store ");
       if (offset > 0)
         fllog("%d(", offset);
-      printvalue(v->args.store.mem, valindices);
+      printvalue(F, i->args.store.addr);
       if (offset > 0)
         fllog(")");
       fllog(" <- ");
-      printvalue(v->args.store.v, valindices);
+      printvalue(F, i->args.store.val);
       break;
     }
     case IR_CAST: {
+      IRValue val = i->args.cast.val;
       fllog("cast ");
-      printtype(v->args.cast.type);
+      printtype(i->args.cast.type);
       fllog(" <- ");
-      printtype(v->args.cast.v->type);
+      printtype(_ir_instr(F, val)->type);
       fllog(" ");
-      printvalue(v->args.cast.v, valindices);
+      printvalue(F, val);
       break;
     }
     case IR_BINOP: {
-      printbinop(v->args.binop.op);
+      printbinop(i->args.binop.op);
       fllog(" ");
-      printvalue(v->args.binop.l, valindices);
+      printvalue(F, i->args.binop.lhs);
       fllog(" ");
-      printvalue(v->args.binop.r, valindices);
+      printvalue(F, i->args.binop.rhs);
       break;
     }
     case IR_CMP: {
       fllog("if ");
-      printvalue(v->args.cmp.l, valindices);
+      printvalue(F, i->args.cmp.lhs);
       fllog(" ");
-      printcmpop(v->args.cmp.op);
+      printcmpop(i->args.cmp.op);
       fllog(" ");
-      printvalue(v->args.cmp.r, valindices);
+      printvalue(F, i->args.cmp.rhs);
       fllog(" then ");
-      printbblock(v->args.cmp.jmp, bbindices);
+      printbblock(i->args.cmp.dest);
       break;
     }
     case IR_JMP: {
       fllog("jmp ");
-      printbblock(v->args.jmp, bbindices);
+      printbblock(i->args.jmp.dest);
       break;
     }
     case IR_RET: {
       fllog("ret ");
-      printvalue(v->args.ret.v, valindices);
+      printvalue(F, i->args.ret.val);
       break;
     }
     case IR_PHI: {
-      size_t i, n = ir_phivec_size(&v->args.phi);
+      IRPhiIncVector *pv = &i->args.phi.inc;
+      size_t j, n = irpv_size(pv);
       fllog("phi [<");
-      for (i = 0; i < n; ++i) {
-        IRPhiNode *phi = ir_phivec_get(&v->args.phi, i);
-        printbblock(phi->bblock, bbindices);
+      for (j = 0; j < n; ++j) {
+        IRPhiInc *inc = irpv_getref(pv, j);
+        printbblock(inc->bblock);
         fllog(", ");
-        printvalue(phi->value, valindices);
-        if (i != n - 1)
-          fllog(">, <");
+        printvalue(F, inc->value);
+        if (j != n - 1) fllog(">, <");
       }
       fllog(">]");
       break;
     }
   }
+  fllog(" : ");
+  printtype(i->type);
   fllog("\n");
 }
 
-static void fillindices(IRFunction *F, IRBBlockTable *bbindices,
-                        IRValueTable *valindices) {
-  int bbindex = 0, valindex = 0;
-  ir_bbvec_foreach(&F->bblocks, bb, {
-    ir_bbtab_insert(bbindices, bb, bbindex++);
-    ir_valvec_foreach(&bb->values, v, {
-      if (v->instr != IR_CONST && v->type != IR_VOID)
-        ir_valtab_insert(valindices, v, valindex++);
-    });
-  });
-}
-
 void _ir_print(IRFunction *F) {
-  size_t nblocks = _ir_nbblocks(F);
-  size_t nvalues = _ir_nvalues(F);
-  IRBBlockTable bbindices;
-  IRValueTable valindices;
-  ir_bbtab_create(&bbindices, nblocks, F->L);
-  ir_valtab_create(&valindices, nvalues, F->L);
-  fillindices(F, &bbindices, &valindices);
-  fllog("IR function (%p)\n", (void *)F);
-  ir_bbvec_foreach(&F->bblocks, bb, {
-    printbblock(bb, &bbindices);
+  IRName id = 0;
+  fllog("IR %p:\n", (void *)F);
+  irbbv_foreach(&F->bblocks, bb, {
+    printbblock(id++);
     fllog(":\n");
-    ir_valvec_foreach(&bb->values, v, {
-      printinstr(v, &bbindices, &valindices);
+    irbb_foreach(bb, i, {
+      printinstr(F, i);
     });
     fllog("\n");
   });
   fllog("\n");
-  ir_bbtab_destroy(&bbindices);
-  ir_valtab_destroy(&valindices);
 }
-
 

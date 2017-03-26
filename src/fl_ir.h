@@ -25,7 +25,7 @@
 /*
  * This is simple SSA intermetiate representation.
  *
- * The fastlua jit transforms the lua bytecode into this representation.
+ * The FastLua JIT transforms the lua bytecode into this representation.
  * Latter, the IR is optimized and compiled into machine code.
  *
  * The IRFunction is the main structure of this module. Most of the routines
@@ -40,38 +40,19 @@
 #ifndef fl_ir_h
 #define fl_ir_h
 
-#include <limits.h>
-
 #include "llimits.h"
 
 #include "fl_containers.h"
 
-/* Foward declarations */
+/* Lua definitions */
 struct lua_State;
-
-/* Types defined in this module */
-typedef struct IRFunction IRFunction;
-typedef struct IRBBlock IRBBlock;
-typedef struct IRValue IRValue;
-typedef struct IRPhiNode IRPhiNode;
-
-typedef l_mem IRInt;
+typedef lua_Integer IRInt;
 typedef lua_Number IRFloat;
 
-/* Containers */
-TSCC_DECL_VECTOR(IRBBlockVector, ir_bbvec_, IRBBlock *)
-#define ir_bbvec_foreach(vec, val, _cmd) \
-    TSCC_VECTOR_FOREACH(ir_bbvec_, vec, IRBBlock *, val, _cmd)
+/* Basic blocks and instructions are referenced by indices. */
+typedef int IRName;
 
-TSCC_DECL_VECTOR(IRValueVector, ir_valvec_, IRValue *)
-#define ir_valvec_foreach(vec, val, _cmd) \
-    TSCC_VECTOR_FOREACH(ir_valvec_, vec, IRValue *, val, _cmd)
-
-TSCC_DECL_VECTOR(IRPhiNodeVector, ir_phivec_, IRPhiNode *)
-#define ir_phivec_foreach(vec, val, _cmd) \
-    TSCC_VECTOR_FOREACH(ir_phivec_, vec, IRPhiNode *, val, _cmd)
-
-/* Value types */
+/* Resulting type of a IR instruction. */
 enum IRType {
   IR_CHAR,
   IR_SHORT,
@@ -83,8 +64,8 @@ enum IRType {
   IR_VOID
 };
 
-/* Intruction types */
-enum IRInstruction {
+/* Intruction tag. */
+enum IRInstrTag {
   IR_CONST = IR_VOID + 1,
   IR_GETARG,
   IR_LOAD,
@@ -97,7 +78,7 @@ enum IRInstruction {
   IR_PHI
 };
 
-/* Binary operations */
+/* Binary operations. */
 enum IRBinOp {
   IR_ADD = IR_PHI + 1,
   IR_SUB,
@@ -105,7 +86,7 @@ enum IRBinOp {
   IR_DIV
 };
 
-/* Comparisons */
+/* Comparison operations. */
 enum IRCmpOp {
   IR_NE = IR_DIV + 1,
   IR_EQ,
@@ -115,104 +96,129 @@ enum IRCmpOp {
   IR_GT
 };
 
-/* union IRConstant
- * Constants are either integers/pointers or float numbers. */
-union IRConstant {
-  IRFloat f;                        /* float */
-  IRInt i;                          /* integers */
-  void *p;                          /* pointers */
-};
+/* Values are references to a instruction inside a basic block. */
+typedef struct IRValue {
+  IRName bblock;
+  IRName instr;
+} IRValue;
 
-/* IRFunction
- * Root structure of the module. */
-struct IRFunction {
-  struct lua_State *L;              /* lua state */
-  IRBBlock *currbb;                 /* current basic block */
-  IRBBlockVector bblocks;          /* list of basic blocks */
-};
+/* Map a basic block to the corresponding SSA value. */
+typedef struct IRPhiInc {
+  IRValue value;
+  IRName bblock;
+} IRPhiInc;
 
-/* IRBBlock
- * Basicaly a list of values. */
-struct IRBBlock {
-  IRValueVector values;
-};
+/* Vector of phi incoming values. */
+TSCC_DECL_VECTOR(IRPhiIncVector, irpv_, IRPhiInc)
+#define irpv_foreach(vec, val, cmd) \
+    TSCC_VECTOR_FOREACH(irpv_, vec, IRPhiInc, val, cmd)
 
-/* IRValue
- * Contains the instruction that generates it. */
-struct IRValue {
-  enum IRType type;                 /* value type */
-  enum IRInstruction instr;         /* instruction */
-  IRBBlock *bblock;                 /* parent basic block */
-  union {                           /* instruction arguments */
-    union IRConstant konst;
+/* SSA Instruction. */
+typedef struct IRInstr {
+  enum IRType type;             /* resulting type */
+  enum IRInstrTag tag;          /* instruction tag */
+  IRName bblock;                /* parent basic block */
+  IRName id;                    /* unique instruction id */
+  union {                       /* arguments */
+    union { IRFloat f; IRInt i; void *p; } konst;
     struct { int n; } getarg;
-    struct { IRValue *mem; size_t offset; enum IRType type; } load;
-    struct { IRValue *mem, *v; size_t offset; } store;
-    struct { IRValue *v; enum IRType type; } cast;
-    struct { enum IRBinOp op; IRValue *l, *r; } binop;
-    struct { enum IRCmpOp op; IRValue *l, *r; IRBBlock *jmp; } cmp;
-    IRBBlock *jmp;
-    struct { IRValue *v; } ret;
-    IRPhiNodeVector phi;
+    struct { IRValue addr; size_t offset; enum IRType type; } load;
+    struct { IRValue addr, val; size_t offset; } store;
+    struct { IRValue val; enum IRType type; } cast;
+    struct { enum IRBinOp op; IRValue lhs, rhs; } binop;
+    struct { enum IRCmpOp op; IRValue lhs, rhs; IRName dest; } cmp;
+    struct { IRName dest; } jmp;
+    struct { IRValue val; } ret;
+    struct { IRPhiIncVector inc; } phi;
   } args;
-};
+} IRInstr;
 
-/* PhiNode
- * Map a basic block to the corresponding SSA value. */
-struct IRPhiNode {
-  IRValue *value;
-  IRBBlock *bblock;
-};
+/* Basic blocks are a vector of ir instructions. */
+TSCC_DECL_VECTOR(IRBBlock, irbb_, IRInstr)
+#define irbb_foreach(vec, val, cmd) \
+    TSCC_VECTOR_FOREACH(irbb_, vec, IRInstr, val, cmd)
 
-/* Create/destroy the IR function. */
-IRFunction *ir_create(struct lua_State *L);
-void ir_destroy(IRFunction *F);
+/* Vector of basic blocks. */
+TSCC_DECL_VECTOR(IRBBlockVector, irbbv_, IRBBlock)
+#define irbbv_foreach(vec, val, cmd) \
+    TSCC_VECTOR_FOREACH(irbbv_, vec, IRBBlock, val, cmd)
 
-/* Verify if a type is an integer. */
+/* Root structure of the module. */
+typedef struct IRFunction {
+  struct lua_State *L;              /* lua state */
+  IRName currbb;                    /* current basic block */
+  IRName ninstrs;                   /* number of instructions */
+  IRBBlockVector bblocks;           /* list of basic blocks */
+} IRFunction;
+
+/* Null names */
+#define IRNull -1
+#define ir_isnull(x) (x == IRNull)
+
+/* Create a value given the basic block and instruction. */
+IRValue ir_createvalue(IRName bblock, IRName instr);
+
+/* Create a null value. */
+#define ir_nullvalue() ir_createvalue(IRNull, IRNull)
+
+/* Compare two values. */
+#define ir_cmpvalue(a, b) ((a).bblock == (b).bblock) && (a).instr == (b).instr)
+
+/* Check if a value is null. */
+#define ir_isnullvalue(v) (ir_isnull((v).bblock) || ir_isnull((v).instr))
+
+/* Initialize the IR function. */
+void _ir_init(IRFunction *F, struct lua_State *L);
+#define ir_init(L) _ir_init(_irfunc, L)
+
+/* Deallocate the IR function data. */
+void _ir_close(IRFunction *F);
+#define ir_close() _ir_close(_irfunc)
+
+/* Verify if a IR type is integer. */
 #define ir_isintt(t) (t <= IR_LONG)
 
-/* Create a basic block and returns it. */
-IRBBlock *_ir_addbblock(IRFunction *F);
+/* Add a basic block and return it. */
+IRName _ir_addbblock(IRFunction *F);
 #define ir_addbblock() _ir_addbblock(_irfunc)
 
-/* Insert the basic block after bb and returns it. */
-IRBBlock *_ir_insertbblock(IRFunction *F, IRBBlock *prevbb);
-#define ir_insertbblock(prevbb) _ir_insertbblock(_irfunc, prevbb)
+/* Set the current basic block. */
+#define _ir_setbblock(F, bblock) (F->currbb = bblock)
+#define ir_setbblock(bblock) _ir_setbblock(_irfunc, bblock)
 
-/* Access the current basic block. */
-#define ir_currbblock() (_irfunc->currbb)
+/* Obtain the instruction given the value. */
+IRInstr *_ir_instr(IRFunction *F, IRValue v);
+#define ir_instr(v) _ir_instr(_irfunc, v)
 
-/* Get the number of basic blocks */
-#define _ir_nbblocks(F) (ir_bbvec_size(&F->bblocks))
+/* Get the number of basic blocks. */
+#define _ir_nbblocks(F) (irbbv_size(&F->bblocks))
 #define ir_nbblocks() _ir_nbblocks(_irfunc)
 
-/* Get the total number of commands */
-size_t _ir_nvalues(IRFunction *F);
-#define ir_nvalues() _ir_nvalues(_irfunc)
+/* Get the number of instructions. */
+#define _ir_ninstrs(F) (F->ninstrs)
+#define ir_ninstrs() _ir_ninstrs(_irfunc)
 
-/* Iterates through the basic blocks */
-#define ir_foreach_bb(bb, _cmd) ir_bbvec_foreach(&_irfunc->bblocks, bb, _cmd)
-
-/* Add a value to the current basic block and return it. */
-IRValue *_ir_consti(IRFunction *F, IRInt i, enum IRType type);
-IRValue *_ir_constf(IRFunction *F, IRFloat f);
-IRValue *_ir_constp(IRFunction *F, void *p);
-IRValue *_ir_getarg(IRFunction *F, enum IRType type, int n);
-IRValue *_ir_load(IRFunction *F, enum IRType type, IRValue *mem, int offset);
-IRValue *_ir_store(IRFunction *F, IRValue *mem, IRValue *val, int offset);
-IRValue *_ir_cast(IRFunction *F, IRValue *v, enum IRType type);
-IRValue *_ir_binop(IRFunction *F, enum IRBinOp op, IRValue *l, IRValue *r);
-IRValue *_ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue *l, IRValue *r,
-                 IRBBlock *jmp);
-IRValue *_ir_jmp(IRFunction *F, IRBBlock *bb);
-IRValue *_ir_return(IRFunction *F, IRValue *v);
-IRValue *_ir_phi(IRFunction *F, enum IRType type);
+/* Add a instruction to the current basic block and return the
+ * resulting value. */
+IRValue _ir_consti(IRFunction *F, IRInt i, enum IRType type);
+IRValue _ir_constf(IRFunction *F, IRFloat f);
+IRValue _ir_constp(IRFunction *F, void *p);
+IRValue _ir_getarg(IRFunction *F, enum IRType type, int n);
+IRValue _ir_load(IRFunction *F, enum IRType type, IRValue addr, int offset);
+IRValue _ir_store(IRFunction *F, IRValue addr, IRValue val, int offset);
+IRValue _ir_cast(IRFunction *F, IRValue val, enum IRType type);
+IRValue _ir_binop(IRFunction *F, enum IRBinOp op, IRValue lhs, IRValue rhs);
+IRValue _ir_cmp(IRFunction *F, enum IRCmpOp op, IRValue lhs, IRValue rhs,
+                IRName dest);
+IRValue _ir_jmp(IRFunction *F, IRName dest);
+IRValue _ir_return(IRFunction *F, IRValue v);
+IRValue _ir_phi(IRFunction *F, enum IRType type);
 #define ir_consti(i, type) _ir_consti(_irfunc, i, type)
 #define ir_constf(f) _ir_constf(_irfunc, f)
 #define ir_constp(p) _ir_constp(_irfunc, p)
 #define ir_getarg(type, n) _ir_getarg(_irfunc, type, n)
-#define ir_load(type, mem, offset) _ir_load(_irfunc, type, mem, offset)
-#define ir_store(mem, val, offset) _ir_store(_irfunc, mem, val, offset)
+#define ir_load(type, addr, offset) _ir_load(_irfunc, type, addr, offset)
+#define ir_store(addr, val, offset) _ir_store(_irfunc, addr, val, offset)
 #define ir_cast(v, type) _ir_cast(_irfunc, v, type)
 #define ir_binop(op, l, r) _ir_binop(_irfunc, op, l, r)
 #define ir_cmp(op, l, r, jmp) _ir_cmp(_irfunc, op, l, r, jmp)
@@ -220,13 +226,12 @@ IRValue *_ir_phi(IRFunction *F, enum IRType type);
 #define ir_return(v) _ir_return(_irfunc, v)
 #define ir_phi(type) _ir_phi(_irfunc, type)
 
-/* Adds a phi node to the phi value. */
-void _ir_addphinode(IRFunction *F, IRValue *phi, IRValue *value,
-    IRBBlock *bblock);
-#define ir_addphinode(phi, value, bblock) \
-    _ir_addphinode(_irfunc, phi, value, bblock)
+/* Add a phi incoming value to the phi instruction. */
+void _ir_addphiinc(IRFunction *F, IRValue phi, IRValue value, IRName bblock);
+#define ir_addphiinc(phi, value, bblock) \
+    _ir_addphiinc(_irfunc, phi, value, bblock)
 
-/* DEBUG: Prints the function */
+/* DEBUG: Print the function with fllog. */
 void _ir_print(IRFunction *F);
 #define ir_print() _ir_print(_irfunc)
 

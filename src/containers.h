@@ -226,7 +226,7 @@ TSCC_INLINE T *pref##data(Vector *v) {                                         \
     size_t _i_##t;                                                             \
     size_t _n_##t = prefix##size(v);                                           \
     for (_i_##t = 0; _i_##t < _n_##t; ++_i_##t) {                              \
-      T t = prefix##get(v, _i_##t);                                            \
+      T *t = prefix##getref(v, _i_##t);                                        \
       (void)t;                                                                 \
       cmd;                                                                     \
     }                                                                          \

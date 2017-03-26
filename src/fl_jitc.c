@@ -36,14 +36,14 @@
 #include "fl_logger.h"
 
 /* IRFunction implict parameter. */
-#define _irfunc (J->irfunc)
+#define _irfunc (&J->irfunc)
 
 /* Information necessary to build the a jit exit */
 struct JitExit {
-  IRBBlock *bb;                 /* side exit basic block */
+  IRName bb;                    /* side exit basic block */
   int ntostore;                 /* number of registers that will be stored */
   int *indices;                 /* register's indices */
-  IRValue **values;             /* register's values */
+  IRValue *values;              /* register's values */
   int *tags;                    /* register's tags */
   int status;                   /* return status */
 };
@@ -55,8 +55,8 @@ TSCC_DECL_VECTOR(JitExitVector, exvec_, struct JitExit)
 
 /* Information about each register in the trace. */
 struct JitRegData {
-  IRValue *current;             /* current ir value */
-  IRValue *phi;                 /* phi value */
+  IRValue current;              /* current ir value */
+  IRValue phi;                  /* phi value */
   int tag;                      /* current tag */
   unsigned int set : 1;         /* true if the value was set */
 };
@@ -65,46 +65,48 @@ struct JitRegData {
 typedef struct JitState {
   lua_State *L;                 /* Lua state */
   TraceRecording *tr;           /* recorded trace */
-  IRFunction *irfunc;           /* IR output function */
-  IRBBlock *preloop;            /* last basic block before the loop start */
-  IRBBlock *loopstart;          /* first block in the loop */
-  IRBBlock *loopend;            /* last block in the loop */
-  IRBBlock *earlyexit;          /* side exit before the loop started */
+  IRFunction irfunc;            /* IR output function */
+  int insideloop;               /* true if compiling the bblock loop */
+  IRName preloop;               /* last basic block before the loop start */
+  IRName loopstart;             /* first block in the loop */
+  IRName loopend;               /* last block in the loop */
+  IRName earlyexit;             /* side exit before the loop started */
   JitExitVector exits;          /* exits that must restore the lua stack */
-  IRValue *lstate;              /* Lua state in the jitted code */
-  IRValue *base;                /* Lua stack base */
+  IRValue lstate;               /* Lua state in the jitted code */
+  IRValue base;                 /* Lua stack base */
   int nregisters;               /* number of registers in Lua stack */
   struct JitRegData *r;         /* register data */
 } JitState;
 
 /* Create/destroy the jit state. */
 static JitState *createjitstate(lua_State *L, TraceRecording *tr) {
+  int i, n = tr->p->maxstacksize;
   JitState *J = luaM_new(L, JitState);
   J->L = L;
   J->tr = tr;
-  J->irfunc = ir_create(L);
-  J->preloop = NULL;
-  J->loopstart = NULL;
-  J->loopend = NULL;
-  J->earlyexit = NULL;
+  ir_init(L);
+  J->insideloop = 0;
+  J->preloop = IRNull;
+  J->loopstart = IRNull;
+  J->loopend = IRNull;
+  J->earlyexit = IRNull;
   exvec_create(&J->exits, J->L);
-  J->lstate = J->base = NULL;
-  J->nregisters = tr->p->maxstacksize;
-  J->r = luaM_newvector(L, J->nregisters, struct JitRegData);
-  memset(J->r, 0, J->nregisters * sizeof(struct JitRegData));
+  J->lstate = J->base = ir_nullvalue();
+  J->nregisters = n;
+  J->r = luaM_newvector(L, n, struct JitRegData);
+  for (i = 0; i < n; ++i) {
+    J->r[i].current = J->r[i].phi = ir_nullvalue();
+    J->r[i].tag = 0;
+    J->r[i].set = 0;
+  }
   return J;
 }
 
 static void destroyjitstate(JitState *J) {
-  ir_destroy(J->irfunc);
+  ir_close();
   exvec_destroy(&J->exits);
   luaM_freearray(J->L, J->r, J->nregisters);
   luaM_free(J->L, J);
-}
-
-/* Return 1 if generating code in the preloop bblock. */
-static int beforeloop(JitState* J) {
-  return ir_currbblock() == J->preloop;
 }
 
 /* Convert a lua tag to an ir type. */
@@ -136,7 +138,7 @@ static void loadregister(JitState *J, int i, int checktag) {
   int expectedtag = treg->loadedtag;
   int addr = sizeof(TValue) * i;
   if (checktag) {
-    IRValue *tag = ir_load(IR_INT, J->base, addr + offsetof(TValue, tt_));
+    IRValue tag = ir_load(IR_INT, J->base, addr + offsetof(TValue, tt_));
     ir_cmp(IR_NE, tag, ir_consti(expectedtag, IR_INT), J->earlyexit);
   }
   J->r[i].current = ir_load(type, J->base, addr + offsetof(TValue, value_));
@@ -151,14 +153,14 @@ static void createphivalues(JitState *J) {
     struct JitRegData *r = J->r + i;
     if (r->set) {
       r->phi = ir_phi(converttag(treg->tag));
-      ir_addphinode(r->phi, r->current, J->preloop);
+      ir_addphiinc(r->phi, r->current, J->preloop);
       r->current = r->phi;
     }
   }
 }
 
 /* Load a constant from the constant table. */
-static IRValue *getconst(JitState *J, int kpos, int *tag) {
+static IRValue getconst(JitState *J, int kpos, int *tag) {
   TValue *k = J->tr->p->k + kpos;
   if (tag) *tag = rttype(k);
   switch (ttype(k)) {
@@ -169,16 +171,16 @@ static IRValue *getconst(JitState *J, int kpos, int *tag) {
         return ir_constp(gcvalue(k));
     default: fll_error("unhandled const type"); break;
   }
-  return NULL;
+  return ir_nullvalue();
 }
 
 /* Load a constant or register given the position. */
-static IRValue *gettvalue(JitState *J, int pos, int *tag) {
+static IRValue gettvalue(JitState *J, int pos, int *tag) {
   if (ISK(pos))
     return getconst(J, INDEXK(pos), tag);
   else {
     struct JitRegData *r = J->r + pos;
-    if (r->current == NULL) loadregister(J, pos, 1);
+    if (ir_isnullvalue(r->current)) loadregister(J, pos, 1);
     if (tag) *tag = r->tag;
     return r->current;
   }
@@ -186,7 +188,7 @@ static IRValue *gettvalue(JitState *J, int pos, int *tag) {
 
 /* Load a forloop register. Search near instructions to see if the register is
  * in fact a constant. */
-static IRValue *getforloopvalue(JitState* J, int pos, const Instruction *fli) {
+static IRValue getforloopvalue(JitState* J, int pos, const Instruction *fli) {
   const Instruction *i;
   for (i = fli - 1; i != fli - 4; --i)
     if (GET_OPCODE(*i) == OP_LOADK && GETARG_A(*i) == pos)
@@ -195,7 +197,7 @@ static IRValue *getforloopvalue(JitState* J, int pos, const Instruction *fli) {
 }
 
 /* Store a Lua stack register */
-static void storeregister(JitState *J, int regpos, IRValue *value, int tag) {
+static void storeregister(JitState *J, int regpos, IRValue value, int tag) {
   int addr = sizeof(TValue) * regpos;
   ir_store(J->base, value, addr + offsetof(TValue, value_));
   ir_store(J->base, ir_consti(tag, IR_INT), addr + offsetof(TValue, tt_));
@@ -206,13 +208,13 @@ static void linkphivalues(JitState *J) {
   int i;
   for (i = 0; i < J->nregisters; ++i) {
     struct JitRegData *r = J->r + i;
-    if (r->phi)
-      ir_addphinode(r->phi, r->current, J->loopend);
+    if (!ir_isnullvalue(r->phi))
+      ir_addphiinc(r->phi, r->current, J->loopend);
   }
 }
 
 /* Define the Lua register value. */
-static void setregister(JitState *J, int i, IRValue *value, int tag) {
+static void setregister(JitState *J, int i, IRValue value, int tag) {
   struct JitRegData *r = J->r + i;
   r->current = value;
   r->tag = tag;
@@ -220,24 +222,24 @@ static void setregister(JitState *J, int i, IRValue *value, int tag) {
 }
 
 /* Create an exit block and add it to the jit state. */
-static IRBBlock *addexit(JitState *J, int status) {
+static IRName addexit(JitState *J, int status) {
   int i, currindex = 0, ntostore = 0;
   struct JitExit e;
   /* compute the number of registers that will be stored */
   for (i = 0; i < J->tr->p->maxstacksize; ++i)
-    if (J->r[i].set && J->r[i].current)
+    if (J->r[i].set && !ir_isnullvalue(J->r[i].current))
       ntostore++;
   /* create the exit */
   e.bb = ir_addbblock();
   e.ntostore = ntostore;
   e.indices = luaM_newvector(J->L, ntostore, int);
-  e.values = luaM_newvector(J->L, ntostore, IRValue *);
+  e.values = luaM_newvector(J->L, ntostore, IRValue);
   e.tags = luaM_newvector(J->L, ntostore, int);
   e.status = status;
   exvec_push(&J->exits, e);
   /* save the values that will be stored for later */
   for (i = 0; i < J->tr->p->maxstacksize; ++i) {
-    if (J->r[i].set && J->r[i].current) {
+    if (J->r[i].set && !ir_isnullvalue(J->r[i].current)) {
       e.indices[currindex] = i;
       e.values[currindex] = J->r[i].current;
       e.tags[currindex++] = J->r[i].tag;
@@ -249,7 +251,7 @@ static IRBBlock *addexit(JitState *J, int status) {
 /* Store the registers back in the Lua stack. */
 static void closeexit(JitState *J, struct JitExit *e) {
   int i;
-  ir_currbblock() = e->bb;
+  ir_setbblock(e->bb);
   for (i = 0; i < e->ntostore; ++i)
     storeregister(J, e->indices[i], e->values[i], e->tags[i]);
   ir_return(ir_consti(e->status, IR_LONG));
@@ -260,26 +262,26 @@ static void closeexit(JitState *J, struct JitExit *e) {
 /*
  * Compiles a single bytecode in the trace.
  */
-static void compilebytecode(JitState *J, struct TraceInstr ti) {
-  Instruction i = *ti.instr;
+static void compilebytecode(JitState *J, struct TraceInstr *ti) {
+  Instruction i = *ti->instr;
   int op = GET_OPCODE(i);
   switch (op) {
     case OP_MOVE: {
       int tag;
-      IRValue *rb = gettvalue(J, GETARG_B(i), &tag);
+      IRValue rb = gettvalue(J, GETARG_B(i), &tag);
       setregister(J, GETARG_A(i), rb, tag);
       break;
     }
     case OP_LOADK: {
       int tag;
-      IRValue *k = getconst(J, GETARG_Bx(i), &tag);
+      IRValue k = getconst(J, GETARG_Bx(i), &tag);
       setregister(J, GETARG_A(i), k, tag);
       break;
     }
     case OP_ADD: {
       int btag, ctag, resulttag;
-      IRValue *rb = gettvalue(J, GETARG_B(i), &btag);
-      IRValue *rc = gettvalue(J, GETARG_C(i), &ctag);
+      IRValue rb = gettvalue(J, GETARG_B(i), &btag);
+      IRValue rc = gettvalue(J, GETARG_C(i), &ctag);
       if (btag == LUA_TNUMINT && ctag == LUA_TNUMINT) {
         resulttag = LUA_TNUMINT;
       }
@@ -290,24 +292,24 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
         else if (ctag == LUA_TNUMINT)
           rc = ir_cast(rc, IR_FLOAT);
       }
-      IRValue *resultvalue = ir_binop(convertbinop(op), rb, rc);
+      IRValue resultvalue = ir_binop(convertbinop(op), rb, rc);
       setregister(J, GETARG_A(i), resultvalue, resulttag);
       break;
     }
     case OP_FORLOOP: {
       int a = GETARG_A(i);
       int tag;
-      IRValue *idx = gettvalue(J, a, &tag);
-      IRValue *limit = getforloopvalue(J, a + 1, ti.instr);
-      IRValue *step =  getforloopvalue(J, a + 2, ti.instr);
-      IRValue *newidx;
-      IRBBlock *loopexit = addexit(J, 0);
-      if (beforeloop(J)) {
-        enum IRCmpOp cmp = ti.u.forloop.steplt0 ? IR_GE : IR_LT;
+      IRValue idx = gettvalue(J, a, &tag);
+      IRValue limit = getforloopvalue(J, a + 1, ti->instr);
+      IRValue step =  getforloopvalue(J, a + 2, ti->instr);
+      IRValue newidx;
+      IRName loopexit = addexit(J, 0);
+      if (!J->insideloop) {
+        enum IRCmpOp cmp = ti->u.forloop.steplt0 ? IR_GE : IR_LT;
         ir_cmp(cmp, step, ir_consti(0, IR_LUAINT), J->earlyexit);
       }
       newidx = ir_binop(IR_ADD, idx, step);
-      ir_cmp(ti.u.forloop.steplt0 ? IR_LT : IR_GT, newidx, limit, loopexit);
+      ir_cmp(ti->u.forloop.steplt0 ? IR_LT : IR_GT, newidx, limit, loopexit);
       setregister(J, a, newidx, tag); /* internal index */
       setregister(J, a + 3, newidx, tag); /* external index */
       break;
@@ -323,19 +325,21 @@ static void compilebytecode(JitState *J, struct TraceInstr ti) {
 static void initblocks(JitState *J) {
   J->preloop = ir_addbblock();
   J->loopstart = J->loopend = ir_addbblock();
-  J->earlyexit = ir_currbblock() = ir_addbblock();
+  J->earlyexit = ir_addbblock();
+  ir_setbblock(J->earlyexit);
   ir_return(ir_consti(1, IR_LONG));
 }
 
 static void compilepreloop(JitState *J) {
-  ir_currbblock() = J->preloop;
+  ir_setbblock(J->preloop);
   J->lstate = ir_constp(J->L);
   J->base = ir_getarg(IR_PTR, 1);
   flt_rtvec_foreach(&J->tr->instrs, ti, compilebytecode(J, ti));
 }
 
 static void compileloop(JitState *J) {
-  ir_currbblock() = J->loopstart;
+  J->insideloop = 1;
+  ir_setbblock(J->loopstart);
   createphivalues(J);
   flt_rtvec_foreach(&J->tr->instrs, ti, compilebytecode(J, ti));
 }
@@ -343,10 +347,10 @@ static void compileloop(JitState *J) {
 /* Add the missing jumps in the basic blocks. */
 static void addjmps(JitState *J) {
   /* add a jmp from entry to loop block */
-  ir_currbblock() = J->preloop;
+  ir_setbblock(J->preloop);
   ir_jmp(J->loopstart);
   /* and a jmp from the loop end to the beginning */
-  ir_currbblock() = J->loopend;
+  ir_setbblock(J->loopend);
   ir_jmp(J->loopstart);
 }
 
@@ -360,10 +364,10 @@ void fljit_compile(TraceRecording *tr) {
   compileloop(J);
   addjmps(J);
   linkphivalues(J);
-  exvec_foreach(&J->exits, e, closeexit(J, &e));
+  exvec_foreach(&J->exits, e, closeexit(J, e));
   ir_print();
   fllogln("ended jit compilation");
-  flasm_compile(tr->L, tr->p, (Instruction*)tr->start, J->irfunc);
+  flasm_compile(tr->L, tr->p, (Instruction*)tr->start, &J->irfunc);
   destroyjitstate(J);
 }
 
