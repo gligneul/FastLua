@@ -235,7 +235,7 @@ OP_FLVM
 } OpCode;
 
 
-#define NUM_OPCODES	(cast(int, OP_EXTRAARG) + 1)
+#define NUM_OPCODES	(cast(int, OP_FLVM) + 1)
 
 
 
